@@ -28,10 +28,10 @@ namespace dasa::app {
 namespace {
 
 // Dock titles mirror the brief's four nav groups (WORKSPACE / RESEARCH /
-// DYNAMIC / DATABASE) plus REPORTS. Each becomes a real, empty QDockWidget
-// now; its content widget is built in the phase that implements that view
-// (ui/dashboard, ui/driver_view, ... per the architecture proposal) rather
-// than as a placeholder label that would need to be torn out later.
+// DYNAMIC / DATABASE) plus REPORTS. Views not built yet show a short
+// "not built yet" note; the phase that implements a view swaps in its
+// widget (ui/dashboard, ui/function_view, ... per the architecture
+// proposal).
 struct DockSpec {
     const char* title;
     const char* objectName;
@@ -98,9 +98,9 @@ bool containsDriverUrl(const QMimeData* mime) {
 
 // Bump when the default dock arrangement changes so previously saved
 // layouts are discarded instead of restored over the new default.
-constexpr int kLayoutVersion = 2;
-constexpr int kRightColumnWidth = 380;
-constexpr int kBottomStripHeight = 260;
+constexpr int kLayoutVersion = 3;
+constexpr int kRightColumnWidth = 330;
+constexpr int kBottomStripHeight = 200;
 
 } // namespace
 
@@ -157,10 +157,17 @@ QDockWidget* MainWindow::makeDock(const QString& title, const QString& objectNam
     dock->setObjectName(objectName);
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
                        QDockWidget::DockWidgetClosable);
-    // Empty content widget placeholder - swapped for the real view (e.g.
-    // ui/dashboard/DashboardWidget) in the phase that implements it.
-    auto* content = new QWidget(dock);
-    dock->setWidget(content);
+    // Placeholder until the phase that implements this view replaces it, so
+    // an unbuilt view reads as "not built yet" rather than as a blank area.
+    auto* placeholder = new QLabel(
+        tr("<p style='font-size:11pt; color:#c8c8c8'>%1</p>"
+           "<p style='color:#8a8a8a'>Not built yet &mdash; this view arrives in a later phase.</p>")
+            .arg(title.toHtmlEscaped()),
+        dock);
+    placeholder->setAlignment(Qt::AlignCenter);
+    placeholder->setWordWrap(true);
+    placeholder->setMargin(16);
+    dock->setWidget(placeholder);
     return dock;
 }
 
@@ -218,10 +225,12 @@ void MainWindow::buildDockLayout() {
         tabifyDockWidget(firstBottom, dock);
     }
 
+    // Reports share the bottom strip, which has room for their tabs; the
+    // narrow right column keeps only the research views.
     for (const auto& spec : kReportDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
-        addDockWidget(Qt::RightDockWidgetArea, dock);
-        tabifyDockWidget(firstRight, dock);
+        addDockWidget(Qt::BottomDockWidgetArea, dock);
+        tabifyDockWidget(firstBottom, dock);
     }
 
     // Tabifying makes the most recently added dock current; open each group

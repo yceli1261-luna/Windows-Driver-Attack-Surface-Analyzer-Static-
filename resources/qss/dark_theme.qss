@@ -7,6 +7,12 @@ QMainWindow, QDialog {
     background-color: #252526;
 }
 
+QMainWindow::separator {
+    background-color: #1e1e1e;
+    width: 4px;
+    height: 4px;
+}
+
 QMenuBar {
     background-color: #2d2d30;
     color: #dcdcdc;
@@ -44,32 +50,30 @@ QMenu::item:selected {
 }
 
 QDockWidget {
-    color: #dcdcdc;
+    color: #9a9a9a;
     titlebar-close-icon: none;
     titlebar-normal-icon: none;
 }
 
+/* The tab already names the dock, so keep its title strip slim. */
 QDockWidget::title {
-    background-color: #2d2d30;
-    padding: 6px 8px;
-    border: 1px solid #1e1e1e;
+    background-color: #252526;
+    padding: 3px 10px;
+    border-bottom: 1px solid #1e1e1e;
 }
 
 QTabBar::tab {
     background-color: #2d2d30;
     color: #b0b0b0;
-    padding: 6px 14px;
+    padding: 7px 16px;
+    margin-right: 1px;
     border: 1px solid #1e1e1e;
     border-bottom: none;
 }
 
-QTabBar::scroller {
-    width: 24px;
-}
-
-QTabBar QToolButton {
-    background-color: #2d2d30;
-    border: 1px solid #1e1e1e;
+QTabBar::tab:hover:!selected {
+    background-color: #333337;
+    color: #dcdcdc;
 }
 
 QTabBar::tab:selected {
@@ -78,9 +82,63 @@ QTabBar::tab:selected {
     border-bottom: 2px solid #0e639c;
 }
 
+/* Scroll arrows for tab bars that overflow: opaque and wide enough to
+   click, so they cover the clipped tab instead of drawing over its text. */
+QTabBar::scroller {
+    width: 56px;
+}
+
+QTabBar QToolButton {
+    background-color: #333337;
+    border: 1px solid #1e1e1e;
+    min-width: 26px;
+}
+
+QTabBar QToolButton:hover {
+    background-color: #3e3e42;
+}
+
+QTabWidget::pane {
+    border: 1px solid #1e1e1e;
+    top: -1px;
+}
+
+QLineEdit {
+    background-color: #1e1e1e;
+    color: #dcdcdc;
+    border: 1px solid #3e3e42;
+    border-radius: 3px;
+    padding: 5px 8px;
+    selection-background-color: #0e639c;
+}
+
+QLineEdit:focus {
+    border-color: #0e639c;
+}
+
+QSplitter::handle {
+    background-color: #1e1e1e;
+}
+
+QSplitter::handle:horizontal {
+    width: 5px;
+}
+
+QSplitter::handle:vertical {
+    height: 5px;
+}
+
 QStatusBar {
     background-color: #007acc;
     color: #ffffff;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+QStatusBar QLabel {
+    padding: 0 8px;
 }
 
 QScrollBar:vertical, QScrollBar:horizontal {
@@ -100,8 +158,10 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
 QHeaderView::section {
     background-color: #2d2d30;
     color: #dcdcdc;
-    padding: 4px;
-    border: 1px solid #1e1e1e;
+    padding: 5px 10px;
+    border: none;
+    border-right: 1px solid #1e1e1e;
+    border-bottom: 1px solid #1e1e1e;
 }
 
 QTableView, QTreeView, QListView {
@@ -110,5 +170,17 @@ QTableView, QTreeView, QListView {
     alternate-background-color: #252526;
     selection-background-color: #0e639c;
     selection-color: #ffffff;
-    gridline-color: #3e3e42;
+    gridline-color: #333337;
+    border: 1px solid #1e1e1e;
+}
+
+QTableView::item, QTreeView::item {
+    padding: 2px 8px;
+}
+
+QPlainTextEdit {
+    background-color: #1e1e1e;
+    color: #dcdcdc;
+    border: 1px solid #1e1e1e;
+    selection-background-color: #0e639c;
 }

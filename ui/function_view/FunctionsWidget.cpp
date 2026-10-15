@@ -66,12 +66,12 @@ public:
             return {};
         }
         switch (section) {
-        case kAddress: return tr("Address (RVA)");
+        case kAddress: return tr("RVA");
         case kName: return tr("Name");
-        case kSize: return tr("Code bytes");
+        case kSize: return tr("Bytes");
         case kBlocks: return tr("Blocks");
-        case kInstructions: return tr("Instructions");
-        case kCalls: return tr("Calls out");
+        case kInstructions: return tr("Instrs");
+        case kCalls: return tr("Calls");
         case kCallers: return tr("Callers");
         case kSource: return tr("Found via");
         case kNotes: return tr("Notes");
@@ -101,6 +101,9 @@ public:
         }
         if (role == Qt::ToolTipRole && index.column() == kNotes) {
             return notes(*f, true);
+        }
+        if (role == Qt::ToolTipRole && index.column() == kName) {
+            return QString::fromStdString(f->name);
         }
         if (role != Qt::DisplayRole) {
             return {};
@@ -171,7 +174,7 @@ FunctionsWidget::FunctionsWidget(QWidget* parent) : QWidget(parent) {
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setAlternatingRowColors(true);
     m_table->verticalHeader()->setVisible(false);
-    m_table->verticalHeader()->setDefaultSectionSize(22);
+    m_table->verticalHeader()->setDefaultSectionSize(26);
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     leftLayout->addWidget(m_table, 1);
@@ -195,8 +198,9 @@ FunctionsWidget::FunctionsWidget(QWidget* parent) : QWidget(parent) {
 
     splitter->addWidget(left);
     splitter->addWidget(right);
-    splitter->setStretchFactor(0, 4);
-    splitter->setStretchFactor(1, 5);
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 2);
+    splitter->setSizes({600, 400}); // initial 3:2 split; scaled to the real width
     layout->addWidget(splitter);
 
     connect(m_filter, &QLineEdit::textChanged, m_proxy, &QSortFilterProxyModel::setFilterFixedString);
@@ -223,6 +227,12 @@ void FunctionsWidget::setResult(std::shared_ptr<const analysis::AnalysisResult> 
     const auto& set = *m_result->functions;
     m_model->setFunctions(m_result->functions);
     m_table->resizeColumnsToContents();
+    // Long export names would otherwise push the count columns out of
+    // view; the full name is in the listing title and the cell tooltip.
+    m_table->setColumnWidth(kName, std::min(m_table->columnWidth(kName), 200));
+    for (int c : {kSize, kBlocks, kInstructions, kCalls, kCallers}) {
+        m_table->setColumnWidth(c, std::min(m_table->columnWidth(c), 78));
+    }
 
     std::size_t fromPdata = 0;
     for (const auto& f : set.functions) {
@@ -331,7 +341,7 @@ void FunctionsWidget::renderListing(std::size_t functionIndex) {
 
         QString line = QStringLiteral("  %1  %2%3")
                            .arg(QString::number(insn.rva, 16).toUpper().rightJustified(8, QLatin1Char('0')),
-                                bytes.leftJustified(18),
+                                bytes.leftJustified(16),
                                 QString::fromStdString(insn.text()));
 
         QString comment;
@@ -361,7 +371,7 @@ void FunctionsWidget::renderListing(std::size_t functionIndex) {
             }
         }
         if (!comment.isEmpty()) {
-            line = line.leftJustified(62) + QStringLiteral("  ; ") + comment;
+            line = line.leftJustified(54) + QStringLiteral("  ; ") + comment;
         }
         text += line + QLatin1Char('\n');
         m_lineTargets.push_back(target);
