@@ -34,6 +34,30 @@ functions (filterable, sortable) next to an annotated disassembly listing
 computed pointers and lacking .pdata are missed, and switch-table jumps
 aren't followed.
 
+**Phase 4 — driver model, DriverEntry and handlers (done).**
+`core/driver` classifies the driver (WDM, KMDF, minifilter, NDIS,
+Storport, ScsiPort, HID, AVStream) with the evidence for it, steps from the
+PE entry point through argument-forwarding stubs (GsDriverEntry, KMDF's
+FxDriverEntry past WdfVersionBind) to the real DriverEntry, and recovers
+handler registration with a per-function value tracker over the Phase 3
+disassembly:
+
+- WDM: `DriverObject->MajorFunction[]` stores (direct, loops, `rep stos`)
+  in DriverEntry and the functions it passes DriverObject to, plus
+  DriverUnload, DriverStartIo and DriverExtension->AddDevice.
+- KMDF: finds `WDF_BIND_INFO` (framework version, function-table
+  variable), labels every call through the WDF function table using
+  Microsoft's `wdffuncenum.h` (`core/driver/WdfFunctionTable.cpp`, generated
+  by `scripts/python/gen_wdf_function_table.py`), and reads
+  `WDF_DRIVER_CONFIG` / `WDF_IO_QUEUE_CONFIG` at `WdfDriverCreate` /
+  `WdfIoQueueCreate` calls to recover EvtDriverDeviceAdd and each queue's
+  EvtIo* callbacks and dispatch type.
+
+Results are in the IRP Handlers dock; double-click a handler to open it
+in Functions. Limits (flow-insensitive tracking, x64-only KMDF config
+decoding, undecoded port/miniport callback structures) are listed in
+`core/driver/DriverAnalyzer.h` and shown per driver where they apply.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -82,4 +106,12 @@ link step fails with LNK1168 (file in use).
   code bytes) and against cng.sys (every export, the entry point and every
   primary .pdata entry must be found; call graph consistency).
 
-Tests that use cng.sys are skipped if the file isn't present.
+- `core/driver` against `DASARiskyDriver.sys` (WDM) and
+  `DASAKmdfSample.sys`, a synthetic KMDF driver written by
+  `tests/fixtures/drivers/gen_kmdf_fixture.py` (expected entry chain, WDF
+  calls, driver config and queue callbacks come from that script), and
+  structurally against real WDM (beep.sys), KMDF (CAD.sys, 1394ohci.sys,
+  BTHUSB.SYS) and minifilter (Wof.sys) drivers.
+
+Tests that use files from `C:\Windows\System32\drivers` are skipped if the
+file isn't present.

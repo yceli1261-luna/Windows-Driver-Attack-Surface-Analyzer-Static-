@@ -17,6 +17,26 @@ enum class Flow : std::uint8_t {
     Trap,       // int3, ud2, hlt, int 0x29 (__fastfail) - does not continue
 };
 
+/// General-purpose registers, normalised to their full-width register
+/// (eax, ax, al -> Rax), plus Rip. Anything else (xmm, segment, ...) is
+/// Other.
+enum class Reg : std::uint8_t {
+    None, Rax, Rcx, Rdx, Rbx, Rsp, Rbp, Rsi, Rdi,
+    R8, R9, R10, R11, R12, R13, R14, R15, Rip, Other
+};
+
+struct Operand {
+    enum class Kind : std::uint8_t { None, Register, Immediate, Memory };
+    Kind kind = Kind::None;
+    std::uint8_t size = 0; // bytes
+    Reg reg = Reg::None;   // Register
+    std::int64_t imm = 0;  // Immediate
+    Reg base = Reg::None;  // Memory: [base + index*scale + disp]
+    Reg index = Reg::None;
+    std::uint8_t scale = 1;
+    std::int64_t disp = 0;
+};
+
 /// One decoded instruction, addressed by RVA. Capstone types stop at the
 /// Disassembler; this is all the rest of core/ sees.
 struct Instruction {
@@ -38,6 +58,12 @@ struct Instruction {
     std::optional<std::uint64_t> immediateRef;
     // `lea reg, [rip+X]`: X as an RVA. Address-of, not a memory access.
     bool memoryRefIsAddressOf = false;
+
+    // Explicit operands in Intel order (destination first). Implicit
+    // operands (e.g. rdi/rcx of `rep stosq`) are not listed.
+    std::uint8_t opCount = 0;
+    std::array<Operand, 3> ops{};
+    bool hasRepPrefix = false;
 
     bool isIndirect() const {
         return (flow == Flow::Call || flow == Flow::Jump) && !branchTarget.has_value();

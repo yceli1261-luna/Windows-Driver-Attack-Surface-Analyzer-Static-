@@ -21,6 +21,7 @@
 
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/driver_view/DriverModelWidget.h"
 #include "ui/function_view/FunctionsWidget.h"
 
 namespace dasa::app {
@@ -188,6 +189,10 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_functions = new ui::FunctionsWidget(dock);
             dock->setWidget(m_functions);
+        } else if (dock->objectName() == QLatin1String("dock_irp_handlers")) {
+            delete dock->widget();
+            m_driverModel = new ui::DriverModelWidget(dock);
+            dock->setWidget(m_driverModel);
         }
         addDockWidget(Qt::LeftDockWidgetArea, dock);
         if (firstLeft) {
@@ -196,6 +201,14 @@ void MainWindow::buildDockLayout() {
             firstLeft = dock;
         }
     }
+
+    // Double-clicking a handler in IRP Handlers opens it in Functions.
+    connect(m_driverModel, &ui::DriverModelWidget::functionActivated, this, [this](std::uint64_t rva) {
+        m_functions->showFunction(rva);
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_functions"))) {
+            dock->raise();
+        }
+    });
 
     QDockWidget* firstRight = nullptr;
     for (const auto& spec : kResearchDocks) {
@@ -342,6 +355,7 @@ void MainWindow::loadDriver(const QString& path) {
     setWindowTitle(tr("%1 - Driver Attack Surface Analyzer").arg(info.fileName()));
     m_dashboard->showLoading(nativePath);
     m_functions->clear();
+    m_driverModel->clear();
     if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
         dock->show();
         dock->raise();
@@ -386,12 +400,13 @@ void MainWindow::onAnalysisFinished(const QString& path,
     const auto& image = *result->image;
     m_dashboard->showImage(image);
     m_functions->setResult(result);
+    m_driverModel->setResult(result);
     m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
-    statusBar()->showMessage(tr("%1: %2 sections, %3 imports, %4 exports, %5 functions")
+    statusBar()->showMessage(tr("%1: %2 driver, %3 sections, %4 imports, %5 functions")
                                  .arg(name)
+                                 .arg(QString::fromLatin1(core::driver::modelName(result->driver->model.kind)))
                                  .arg(image.sections.size())
                                  .arg(image.importedFunctionCount())
-                                 .arg(image.exports.size())
                                  .arg(result->functions->functions.size()),
                              8000);
 }

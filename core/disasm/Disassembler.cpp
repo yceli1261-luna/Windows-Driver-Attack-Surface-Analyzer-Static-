@@ -7,6 +7,34 @@
 
 namespace dasa::core::disasm {
 
+namespace {
+
+Reg canonical(unsigned r) {
+    switch (r) {
+    case X86_REG_AL: case X86_REG_AH: case X86_REG_AX: case X86_REG_EAX: case X86_REG_RAX: return Reg::Rax;
+    case X86_REG_CL: case X86_REG_CH: case X86_REG_CX: case X86_REG_ECX: case X86_REG_RCX: return Reg::Rcx;
+    case X86_REG_DL: case X86_REG_DH: case X86_REG_DX: case X86_REG_EDX: case X86_REG_RDX: return Reg::Rdx;
+    case X86_REG_BL: case X86_REG_BH: case X86_REG_BX: case X86_REG_EBX: case X86_REG_RBX: return Reg::Rbx;
+    case X86_REG_SPL: case X86_REG_SP: case X86_REG_ESP: case X86_REG_RSP: return Reg::Rsp;
+    case X86_REG_BPL: case X86_REG_BP: case X86_REG_EBP: case X86_REG_RBP: return Reg::Rbp;
+    case X86_REG_SIL: case X86_REG_SI: case X86_REG_ESI: case X86_REG_RSI: return Reg::Rsi;
+    case X86_REG_DIL: case X86_REG_DI: case X86_REG_EDI: case X86_REG_RDI: return Reg::Rdi;
+    case X86_REG_R8B: case X86_REG_R8W: case X86_REG_R8D: case X86_REG_R8: return Reg::R8;
+    case X86_REG_R9B: case X86_REG_R9W: case X86_REG_R9D: case X86_REG_R9: return Reg::R9;
+    case X86_REG_R10B: case X86_REG_R10W: case X86_REG_R10D: case X86_REG_R10: return Reg::R10;
+    case X86_REG_R11B: case X86_REG_R11W: case X86_REG_R11D: case X86_REG_R11: return Reg::R11;
+    case X86_REG_R12B: case X86_REG_R12W: case X86_REG_R12D: case X86_REG_R12: return Reg::R12;
+    case X86_REG_R13B: case X86_REG_R13W: case X86_REG_R13D: case X86_REG_R13: return Reg::R13;
+    case X86_REG_R14B: case X86_REG_R14W: case X86_REG_R14D: case X86_REG_R14: return Reg::R14;
+    case X86_REG_R15B: case X86_REG_R15W: case X86_REG_R15D: case X86_REG_R15: return Reg::R15;
+    case X86_REG_RIP: case X86_REG_EIP: return Reg::Rip;
+    case X86_REG_INVALID: return Reg::None;
+    default: return Reg::Other;
+    }
+}
+
+} // namespace
+
 struct Disassembler::Impl {
     csh handle = 0;
     cs_insn* insn = nullptr; // reused by every decode() call
@@ -76,6 +104,34 @@ std::optional<Instruction> Disassembler::decode(std::span<const std::uint8_t> co
     } else if (insn->id == X86_INS_INT && x86.op_count == 1 && x86.operands[0].type == X86_OP_IMM &&
                x86.operands[0].imm == 0x29) {
         out.flow = Flow::Trap; // __fastfail
+    }
+
+    out.hasRepPrefix = x86.prefix[0] == X86_PREFIX_REP || x86.prefix[0] == X86_PREFIX_REPE ||
+                       x86.prefix[0] == X86_PREFIX_REPNE;
+    out.opCount = static_cast<std::uint8_t>(std::min<std::size_t>(x86.op_count, out.ops.size()));
+    for (std::uint8_t i = 0; i < out.opCount; ++i) {
+        const cs_x86_op& op = x86.operands[i];
+        Operand& o = out.ops[i];
+        o.size = op.size;
+        switch (op.type) {
+        case X86_OP_REG:
+            o.kind = Operand::Kind::Register;
+            o.reg = canonical(op.reg);
+            break;
+        case X86_OP_IMM:
+            o.kind = Operand::Kind::Immediate;
+            o.imm = op.imm;
+            break;
+        case X86_OP_MEM:
+            o.kind = Operand::Kind::Memory;
+            o.base = canonical(op.mem.base);
+            o.index = canonical(op.mem.index);
+            o.scale = static_cast<std::uint8_t>(op.mem.scale);
+            o.disp = op.mem.disp;
+            break;
+        default:
+            break;
+        }
     }
 
     const bool isBranch = out.flow == Flow::Call || out.flow == Flow::Jump || out.flow == Flow::CondJump;

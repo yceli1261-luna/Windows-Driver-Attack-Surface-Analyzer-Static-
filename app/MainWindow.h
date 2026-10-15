@@ -17,6 +17,7 @@ struct AnalysisResult;
 
 namespace dasa::ui {
 class DashboardWidget;
+class DriverModelWidget;
 class FunctionsWidget;
 }
 
@@ -27,8 +28,8 @@ namespace dasa::app {
 /// brief), persisted layout, dark theme, and driver loading via
 /// drag-and-drop, File > Open or --driver. Loading a driver runs the static
 /// analysis pipeline on a worker thread; the result fills the Dashboard
-/// (Phase 2) and Functions (Phase 3) docks. Other docks stay empty until
-/// the phase that implements their view.
+/// (Phase 2), Functions (Phase 3) and IRP Handlers (Phase 4) docks. Other
+/// docks stay empty until the phase that implements their view.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -63,6 +64,7 @@ private:
     QLabel* m_statusDriverLabel = nullptr;
     ui::DashboardWidget* m_dashboard = nullptr;
     ui::FunctionsWidget* m_functions = nullptr;
+    ui::DriverModelWidget* m_driverModel = nullptr;
     quint64 m_loadGeneration = 0;
 };
 

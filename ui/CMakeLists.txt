@@ -1,13 +1,15 @@
 # ui: Qt widgets for each workspace view (one subdirectory per view, per the
 # architecture proposal). Views are presentational: they receive finished
 # analysis results and never run analysis themselves. Phase 2 adds
-# dashboard/, Phase 3 function_view/.
+# dashboard/, Phase 3 function_view/, Phase 4 driver_view/.
 
 add_library(dasa_ui STATIC
     dashboard/DashboardWidget.h
     dashboard/DashboardWidget.cpp
     function_view/FunctionsWidget.h
     function_view/FunctionsWidget.cpp
+    driver_view/DriverModelWidget.h
+    driver_view/DriverModelWidget.cpp
 )
 
 target_include_directories(dasa_ui

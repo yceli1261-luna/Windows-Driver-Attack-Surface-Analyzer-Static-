@@ -3,6 +3,7 @@ add_executable(dasa_core_tests
     PEParserTest.cpp
     DisassemblerTest.cpp
     FunctionDiscovererTest.cpp
+    DriverAnalyzerTest.cpp
 )
 
 target_link_libraries(dasa_core_tests

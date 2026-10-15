@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "core/driver/DriverAnalyzer.h"
 #include "core/pe/PEParser.h"
 
 namespace dasa::analysis {
@@ -27,10 +28,16 @@ std::shared_ptr<const AnalysisResult> runStaticAnalysis(const std::filesystem::p
     result->functions =
         std::make_shared<const core::functions::FunctionSet>(core::functions::discoverFunctions(*image));
     result->functionSeconds = secondsSince(start);
+
+    start = std::chrono::steady_clock::now();
+    result->driver = std::make_shared<const core::driver::DriverAnalysis>(
+        core::driver::analyzeDriver(*image, *result->functions));
+    result->driverSeconds = secondsSince(start);
     result->image = std::move(image);
 
-    spdlog::info("Static analysis of {}: parse {:.3f}s, functions {:.3f}s",
-                 result->image->fileName, result->parseSeconds, result->functionSeconds);
+    spdlog::info("Static analysis of {}: parse {:.3f}s, functions {:.3f}s, driver model {:.3f}s",
+                 result->image->fileName, result->parseSeconds, result->functionSeconds,
+                 result->driverSeconds);
     return result;
 }
 
