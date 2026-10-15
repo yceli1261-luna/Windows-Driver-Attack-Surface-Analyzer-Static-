@@ -196,6 +196,7 @@ KernelApiAnalysis analyzeKernelApis(const pe::PEImage& image, const functions::F
     for (const auto& [name, rva] : roots) {
         out.entryPoints.push_back(name);
     }
+    out.entryPointFunctions = roots;
     const auto reach = computeReach(set, roots);
     auto reachOf = [&](std::uint64_t fn) {
         auto it = reach.find(fn);

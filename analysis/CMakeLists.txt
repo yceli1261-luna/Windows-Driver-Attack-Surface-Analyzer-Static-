@@ -3,12 +3,14 @@
 # - never on ui/ or app/.
 #
 # static/StaticAnalysisPipeline is the one entry point the app calls; each
-# phase adds its stage there. heuristics/, ghidra/ and signatures/ are
-# populated by later phases.
+# phase adds its stage there. heuristics/ holds the finding rules (Phase
+# 7); ghidra/ and signatures/ are populated by later phases.
 
 add_library(dasa_analysis STATIC
     static/StaticAnalysisPipeline.h
     static/StaticAnalysisPipeline.cpp
+    heuristics/FindingRules.h
+    heuristics/FindingRules.cpp
 )
 
 target_link_libraries(dasa_analysis

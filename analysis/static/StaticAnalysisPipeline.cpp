@@ -4,6 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "analysis/heuristics/FindingRules.h"
 #include "core/driver/DriverAnalyzer.h"
 #include "core/pe/PEParser.h"
 
@@ -41,6 +42,9 @@ std::shared_ptr<const AnalysisResult> runStaticAnalysis(const std::filesystem::p
         core::driver::analyzeDevices(*image, *result->functions, *result->driver));
     result->kernelApis = std::make_shared<const core::security::KernelApiAnalysis>(
         core::security::analyzeKernelApis(*image, *result->functions, *result->driver, *result->ioctls));
+    result->findings = std::make_shared<const core::findings::FindingsReport>(generateFindings(
+        FindingInputs{*image, *result->functions, *result->driver, *result->ioctls, *result->devices,
+                      *result->kernelApis}));
     result->surfaceSeconds = secondsSince(start);
     result->image = std::move(image);
 

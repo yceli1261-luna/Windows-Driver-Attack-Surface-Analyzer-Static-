@@ -118,6 +118,11 @@ QWidget* DashboardWidget::buildImagePage() {
     m_subtitle->setWordWrap(true);
     layout->addWidget(m_subtitle);
 
+    m_risk = new QLabel(page);
+    m_risk->setTextFormat(Qt::RichText);
+    m_risk->setWordWrap(true);
+    layout->addWidget(m_risk);
+
     m_facts = new QLabel(page);
     m_facts->setTextFormat(Qt::RichText);
     m_facts->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -170,6 +175,11 @@ QWidget* DashboardWidget::buildImagePage() {
 
 void DashboardWidget::insertTab(int index, QWidget* widget, const QString& title) {
     m_tabs->insertTab(index, widget, title);
+}
+
+void DashboardWidget::setRiskSummary(const QString& html) {
+    m_risk->setText(html);
+    m_risk->setVisible(!html.isEmpty());
 }
 
 void DashboardWidget::showEmpty() {

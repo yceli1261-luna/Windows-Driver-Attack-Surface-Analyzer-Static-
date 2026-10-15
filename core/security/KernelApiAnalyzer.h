@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/driver/DriverModel.h"
@@ -43,6 +44,7 @@ struct KernelApiAnalysis {
     std::vector<PrivilegedInstruction> privileged;
     std::map<ApiCategory, int> categoryCounts;
     std::vector<std::string> entryPoints; // the roots reachability was computed from
+    std::vector<std::pair<std::string, std::uint64_t>> entryPointFunctions; // same, with RVAs
     std::vector<std::string> notes;
 
     int countAtLeast(ApiRisk r) const;

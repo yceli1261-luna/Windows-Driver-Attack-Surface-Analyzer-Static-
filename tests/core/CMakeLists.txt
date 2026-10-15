@@ -6,11 +6,13 @@ add_executable(dasa_core_tests
     DriverAnalyzerTest.cpp
     AttackSurfaceTest.cpp
     KernelApiTest.cpp
+    FindingsTest.cpp
 )
 
 target_link_libraries(dasa_core_tests
     PRIVATE
         dasa_core
+        dasa_analysis
         GTest::gtest
         GTest::gtest_main
 )

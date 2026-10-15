@@ -87,6 +87,23 @@ AddDevice / StartIo, KMDF callbacks) reach each call site through the call
 graph. Shown on the Dashboard's Kernel APIs tab. Risk rates the primitive,
 not the driver; whether user input reaches it is for the data-flow phase.
 
+**Phase 7 — findings and risk score (done).** `core/findings` defines a
+finding as a claim plus evidence chains (user-mode name → device → entry
+point → IOCTL → call path → call or instruction), with severity,
+confidence, description and recommendation. `analysis/heuristics/
+FindingRules` replaces v1's count-based `rules.json` with
+evidence-producing rules: dangerous APIs and privileged instructions
+reachable from user-request handlers (severity lowered when no
+user-mode name was recovered; internal device control rated separately),
+device security (FILE_DEVICE_SECURE_OPEN, default ACL with a link,
+unprotected links), METHOD_NEITHER (escalated without
+ProbeForRead/Write) and FILE_ANY_ACCESS IOCTLs, runtime-resolved APIs,
+system callbacks, uncalled critical imports, and image hardening. The
+0-100 risk score is a confidence-weighted sum with the contributing
+findings listed. Shown in the Findings and Evidence docks and on the
+Dashboard. Reachability is over the call graph, not data flow, and the
+findings say so.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -155,6 +172,11 @@ link step fails with LNK1168 (file in use).
   (MmMapIoSpace, `wrmsr` and `in` only reachable from
   IRP_MJ_DEVICE_CONTROL; ZwQuerySystemInformation resolved at runtime from
   DriverEntry) and the risky fixture's imports.
+
+- Findings over the full pipeline for all three fixtures (e.g. the WDM
+  fixture's MmMapIoSpace chain `\DosDevices\DasaWdm` →
+  IRP_MJ_DEVICE_CONTROL → IOCTL 0x0022E00B → sub_1300 → call at 0x1320)
+  and the risk-score weights.
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

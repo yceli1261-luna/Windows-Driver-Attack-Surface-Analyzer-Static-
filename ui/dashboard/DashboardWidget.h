@@ -31,6 +31,8 @@ public:
     /// Adds a view built from later analysis stages (e.g. Kernel APIs) to
     /// the tab row next to the PE tables.
     void insertTab(int index, QWidget* widget, const QString& title);
+    /// One-line risk summary under the file name (Phase 7).
+    void setRiskSummary(const QString& html);
 
 private:
     QWidget* buildMessagePage();
@@ -47,6 +49,7 @@ private:
 
     QLabel* m_title = nullptr;
     QLabel* m_subtitle = nullptr;
+    QLabel* m_risk = nullptr;
     QLabel* m_facts = nullptr;
     QLabel* m_hashes = nullptr;
     QTabWidget* m_tabs = nullptr;

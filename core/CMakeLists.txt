@@ -6,7 +6,7 @@
 # agreed in the architecture proposal; empty ones keep a .gitkeep until the
 # phase that populates them. Phase 2 adds pe/, Phase 3 disasm/ and
 # functions/, Phase 4 driver/, Phase 5 ioctl/ and driver/DeviceObjects,
-# Phase 6 security/.
+# Phase 6 security/, Phase 7 findings/.
 
 add_library(dasa_core STATIC
     Version.cpp
@@ -38,6 +38,8 @@ add_library(dasa_core STATIC
     security/ApiCatalog.cpp
     security/KernelApiAnalyzer.h
     security/KernelApiAnalyzer.cpp
+    findings/Finding.h
+    findings/Finding.cpp
 )
 
 target_include_directories(dasa_core

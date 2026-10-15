@@ -22,6 +22,9 @@
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "ui/dashboard/DashboardWidget.h"
 #include "ui/driver_view/DevicesWidget.h"
+#include "ui/findings_view/EvidenceWidget.h"
+#include "ui/findings_view/FindingsWidget.h"
+#include "ui/findings_view/SeverityColors.h"
 #include "ui/driver_view/DriverModelWidget.h"
 #include "ui/function_view/FunctionsWidget.h"
 #include "ui/ioctl_view/IoctlWidget.h"
@@ -206,6 +209,14 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_devices = new ui::DevicesWidget(dock);
             dock->setWidget(m_devices);
+        } else if (dock->objectName() == QLatin1String("dock_findings")) {
+            delete dock->widget();
+            m_findings = new ui::FindingsWidget(dock);
+            dock->setWidget(m_findings);
+        } else if (dock->objectName() == QLatin1String("dock_evidence")) {
+            delete dock->widget();
+            m_evidence = new ui::EvidenceWidget(dock);
+            dock->setWidget(m_evidence);
         }
         addDockWidget(Qt::LeftDockWidgetArea, dock);
         if (firstLeft) {
@@ -226,6 +237,8 @@ void MainWindow::buildDockLayout() {
     connect(m_driverModel, &ui::DriverModelWidget::functionActivated, this, openFunction);
     connect(m_ioctls, &ui::IoctlWidget::functionActivated, this, openFunction);
     connect(m_kernelApis, &ui::KernelApiWidget::functionActivated, this, openFunction);
+    connect(m_evidence, &ui::EvidenceWidget::functionActivated, this, openFunction);
+    connect(m_findings, &ui::FindingsWidget::findingSelected, m_evidence, &ui::EvidenceWidget::showFinding);
 
     QDockWidget* firstRight = nullptr;
     for (const auto& spec : kResearchDocks) {
@@ -376,6 +389,9 @@ void MainWindow::loadDriver(const QString& path) {
     m_ioctls->clear();
     m_devices->clear();
     m_kernelApis->clear();
+    m_findings->clear();
+    m_evidence->clear();
+    m_dashboard->setRiskSummary(QString());
     if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
         dock->show();
         dock->raise();
@@ -424,13 +440,25 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_ioctls->setResult(result);
     m_devices->setResult(result);
     m_kernelApis->setResult(result);
+    m_evidence->setResult(result);
+    m_findings->setResult(result); // selects the first finding, which fills Evidence
+    const auto& risk = result->findings->risk;
+    m_dashboard->setRiskSummary(
+        tr("<span style='font-size:12pt; color:%1'><b>%2/100 &middot; %3 risk</b></span>"
+           "&nbsp;&nbsp;<span style='color:#9a9a9a'>%4 findings - see the Findings tab</span>")
+            .arg(ui::riskLevelColor(QString::fromStdString(risk.level)).name())
+            .arg(risk.score)
+            .arg(QString::fromStdString(risk.level))
+            .arg(result->findings->findings.size()));
     m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
-    statusBar()->showMessage(tr("%1: %2 driver, %3 functions, %4 IOCTLs, %5 device objects")
+    statusBar()->showMessage(tr("%1: risk %6/100 (%7), %2 driver, %3 functions, %4 IOCTLs, %5 device objects")
                                  .arg(name)
                                  .arg(QString::fromLatin1(core::driver::modelName(result->driver->model.kind)))
                                  .arg(result->functions->functions.size())
                                  .arg(result->ioctls->ioctls.size())
-                                 .arg(result->devices->devices.size()),
+                                 .arg(result->devices->devices.size())
+                                 .arg(result->findings->risk.score)
+                                 .arg(QString::fromStdString(result->findings->risk.level)),
                              8000);
 }
 
