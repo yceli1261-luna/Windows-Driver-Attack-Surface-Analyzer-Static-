@@ -21,8 +21,10 @@
 
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/driver_view/DevicesWidget.h"
 #include "ui/driver_view/DriverModelWidget.h"
 #include "ui/function_view/FunctionsWidget.h"
+#include "ui/ioctl_view/IoctlWidget.h"
 
 namespace dasa::app {
 
@@ -193,6 +195,14 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_driverModel = new ui::DriverModelWidget(dock);
             dock->setWidget(m_driverModel);
+        } else if (dock->objectName() == QLatin1String("dock_ioctls")) {
+            delete dock->widget();
+            m_ioctls = new ui::IoctlWidget(dock);
+            dock->setWidget(m_ioctls);
+        } else if (dock->objectName() == QLatin1String("dock_devices")) {
+            delete dock->widget();
+            m_devices = new ui::DevicesWidget(dock);
+            dock->setWidget(m_devices);
         }
         addDockWidget(Qt::LeftDockWidgetArea, dock);
         if (firstLeft) {
@@ -202,13 +212,16 @@ void MainWindow::buildDockLayout() {
         }
     }
 
-    // Double-clicking a handler in IRP Handlers opens it in Functions.
-    connect(m_driverModel, &ui::DriverModelWidget::functionActivated, this, [this](std::uint64_t rva) {
+    // Double-clicking a handler (IRP Handlers) or an IOCTL (IOCTLs) opens
+    // the function in Functions.
+    auto openFunction = [this](std::uint64_t rva) {
         m_functions->showFunction(rva);
         if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_functions"))) {
             dock->raise();
         }
-    });
+    };
+    connect(m_driverModel, &ui::DriverModelWidget::functionActivated, this, openFunction);
+    connect(m_ioctls, &ui::IoctlWidget::functionActivated, this, openFunction);
 
     QDockWidget* firstRight = nullptr;
     for (const auto& spec : kResearchDocks) {
@@ -356,6 +369,8 @@ void MainWindow::loadDriver(const QString& path) {
     m_dashboard->showLoading(nativePath);
     m_functions->clear();
     m_driverModel->clear();
+    m_ioctls->clear();
+    m_devices->clear();
     if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
         dock->show();
         dock->raise();
@@ -401,13 +416,15 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_dashboard->showImage(image);
     m_functions->setResult(result);
     m_driverModel->setResult(result);
+    m_ioctls->setResult(result);
+    m_devices->setResult(result);
     m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
-    statusBar()->showMessage(tr("%1: %2 driver, %3 sections, %4 imports, %5 functions")
+    statusBar()->showMessage(tr("%1: %2 driver, %3 functions, %4 IOCTLs, %5 device objects")
                                  .arg(name)
                                  .arg(QString::fromLatin1(core::driver::modelName(result->driver->model.kind)))
-                                 .arg(image.sections.size())
-                                 .arg(image.importedFunctionCount())
-                                 .arg(result->functions->functions.size()),
+                                 .arg(result->functions->functions.size())
+                                 .arg(result->ioctls->ioctls.size())
+                                 .arg(result->devices->devices.size()),
                              8000);
 }
 

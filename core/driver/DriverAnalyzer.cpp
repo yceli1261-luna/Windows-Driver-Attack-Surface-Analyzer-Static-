@@ -245,11 +245,9 @@ TrackerState entryState(bool x64) {
         s.reg(Reg::Rcx) = Value::make(Kind::DriverObject);
         s.reg(Reg::Rdx) = Value::make(Kind::RegistryPath);
     } else {
-        // stdcall: arguments on the stack above the return address.
+        // stdcall: arguments above the return address (entry-relative keys).
         s.stack[{Reg::Rsp, 4}] = Value::make(Kind::DriverObject);
         s.stack[{Reg::Rsp, 8}] = Value::make(Kind::RegistryPath);
-        s.stack[{Reg::Rbp, 8}] = Value::make(Kind::DriverObject);
-        s.stack[{Reg::Rbp, 12}] = Value::make(Kind::RegistryPath);
     }
     return s;
 }
@@ -528,7 +526,7 @@ struct WdfCollector : TrackerHooks {
             WdfDriverRegistration d;
             d.createCall = insn.rva;
             d.inFunction = currentFunction;
-            const Value cfg = state.stackAt(Reg::Rsp, 0x20);
+            const Value cfg = state.stackArg(0x20);
             d.configResolved = cfg.is(Kind::Stack);
             if (d.configResolved) {
                 // WDF_DRIVER_CONFIG (wdfdriver.h), x64 offsets.

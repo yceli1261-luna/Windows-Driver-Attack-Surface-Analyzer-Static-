@@ -58,6 +58,23 @@ in Functions. Limits (flow-insensitive tracking, x64-only KMDF config
 decoding, undecoded port/miniport callback structures) are listed in
 `core/driver/DriverAnalyzer.h` and shown per driver where they apply.
 
+**Phase 5 — IOCTLs and device objects (done).** `core/ioctl` extracts
+IOCTL codes starting from the Phase 4 handlers (WDM
+`IRP_MJ_DEVICE_CONTROL` / `INTERNAL_DEVICE_CONTROL`, KMDF
+`EvtIoDeviceControl` / `EvtIoInternalDeviceControl` / `EvtIoDefault`)
+and the helpers they pass the request to. The request's IoControlCode is
+tracked (`Irp->Tail.Overlay.CurrentStackLocation->Parameters.
+DeviceIoControl.IoControlCode`, or the EvtIo callback's 5th argument),
+so compares and `sub` switch chains yield exact codes; jump-table
+switches are reported as ranges. IOCTL-shaped constants are used only
+where the code couldn't be tracked, and labelled as such. Codes are
+decoded per `CTL_CODE`. `core/driver/DeviceObjects` follows
+`RtlInitUnicodeString` / static `UNICODE_STRING`s into `IoCreateDevice(Secure)`,
+`IoCreateSymbolicLink`, `IoRegisterDeviceInterface` and the KMDF naming,
+characteristics, symbolic-link and interface DDIs: device names, types,
+`FILE_DEVICE_SECURE_OPEN`, exclusivity, SDDL, and each link paired with
+the device name actually passed. Shown in the IOCTLs and Devices docks.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -113,5 +130,15 @@ link step fails with LNK1168 (file in use).
   structurally against real WDM (beep.sys), KMDF (CAD.sys, 1394ohci.sys,
   BTHUSB.SYS) and minifilter (Wof.sys) drivers.
 
-Tests that use files from `C:\Windows\System32\drivers` are skipped if the
-file isn't present.
+- IOCTL and device recovery against `DASAWdmSample.sys`, written by
+  `tests/fixtures/drivers/gen_wdm_fixture.py` (tracked sub-chain codes, a
+  code passed to a helper, a jump-table range, a buffer-length decoy that
+  must not be reported, a named device with its symbolic link), the
+  KMDF fixture (EvtIoDeviceControl compares, WDF device name, link,
+  characteristics, interface), the 24 codes of `DASARiskyDriver.sys`, and
+  real beep.sys (IOCTL_BEEP_SET, `\Device\Beep`) and null.sys (no IOCTL
+  handler, `\Device\Null`).
+
+The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
+that use files from `C:\Windows\System32\drivers` are skipped if the file
+isn't present.

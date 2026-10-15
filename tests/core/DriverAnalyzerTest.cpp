@@ -129,6 +129,11 @@ TEST(DriverAnalyzer, KmdfFixtureWdfCalls) {
     std::sort(calls.begin(), calls.end());
     const std::vector<std::pair<std::uint64_t, std::string>> expected{
         {0x1200, "WdfDriverCreate"},
+        {0x1300, "WdfDeviceCreateDeviceInterface"},
+        {0x1300, "WdfDeviceCreateSymbolicLink"},
+        {0x1300, "WdfDeviceInitAssignName"},
+        {0x1300, "WdfDeviceInitSetCharacteristics"},
+        {0x1300, "WdfDeviceInitSetDeviceType"},
         {0x1300, "WdfDeviceInitSetIoType"},
         {0x1300, "WdfIoQueueCreate"},
         {0x1300, "WdfIoQueueCreate"},
@@ -169,7 +174,7 @@ TEST(DriverAnalyzer, KmdfFixtureQueues) {
     ASSERT_NE(findCallback(q1.callbacks, "EvtIoRead"), nullptr);
     EXPECT_EQ(findCallback(q1.callbacks, "EvtIoRead")->function, 0x1520u);
     ASSERT_NE(findCallback(q1.callbacks, "EvtIoDeviceControl"), nullptr);
-    EXPECT_EQ(findCallback(q1.callbacks, "EvtIoDeviceControl")->function, 0x1510u);
+    EXPECT_EQ(findCallback(q1.callbacks, "EvtIoDeviceControl")->function, 0x1600u);
 
     // Queue 2: `call [rax + WdfIoQueueCreate*8]` directly.
     const auto& q2 = d.wdfQueues[1];

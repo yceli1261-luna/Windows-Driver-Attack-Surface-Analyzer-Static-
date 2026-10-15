@@ -33,11 +33,19 @@ std::shared_ptr<const AnalysisResult> runStaticAnalysis(const std::filesystem::p
     result->driver = std::make_shared<const core::driver::DriverAnalysis>(
         core::driver::analyzeDriver(*image, *result->functions));
     result->driverSeconds = secondsSince(start);
+
+    start = std::chrono::steady_clock::now();
+    result->ioctls = std::make_shared<const core::ioctl::IoctlAnalysis>(
+        core::ioctl::extractIoctls(*image, *result->functions, *result->driver));
+    result->devices = std::make_shared<const core::driver::DeviceAnalysis>(
+        core::driver::analyzeDevices(*image, *result->functions, *result->driver));
+    result->surfaceSeconds = secondsSince(start);
     result->image = std::move(image);
 
-    spdlog::info("Static analysis of {}: parse {:.3f}s, functions {:.3f}s, driver model {:.3f}s",
+    spdlog::info("Static analysis of {}: parse {:.3f}s, functions {:.3f}s, driver model {:.3f}s, "
+                 "IOCTLs/devices {:.3f}s",
                  result->image->fileName, result->parseSeconds, result->functionSeconds,
-                 result->driverSeconds);
+                 result->driverSeconds, result->surfaceSeconds);
     return result;
 }
 

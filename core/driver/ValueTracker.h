@@ -28,6 +28,9 @@ struct Value {
         RegistryPath,
         WdfTable,        // the WDF function table pointer (*WdfFunctions_01xxx)
         WdfFunction,     // WdfFunctions[a]
+        Irp,             // the IRP* passed to a dispatch routine
+        IrpStack,        // Irp->Tail.Overlay.CurrentStackLocation
+        IoctlCode,       // the request's IoControlCode, plus a (after add/sub)
     };
     Kind kind = Kind::Unknown;
     std::int64_t a = 0;
@@ -38,13 +41,20 @@ struct Value {
     bool is(Kind k) const { return kind == k; }
 };
 
-/// Register file plus stack slots, keyed by (frame register, offset).
-/// The stack model is per-function and assumes rsp/rbp don't move after the
-/// prologue, which holds for MSVC x64 code; pushes mid-function make
-/// rsp-relative keys stale (a stated limitation, not a crash).
+/// Register file plus stack slots.
+///
+/// Stack slots are keyed relative to rsp at function entry (base Rsp): at
+/// entry [rsp] is the return address and the x64 5th argument is at
+/// (Rsp, 0x28). The tracker follows push/pop and `sub/add rsp, imm` in
+/// rspDelta, and registers copied from rsp (`mov rbp, rsp`, `mov rax, rsp`,
+/// `lea rbp, [rsp+x]`) hold Stack values, so every frame access maps to the
+/// same key. Only when rbp's value is unknown are slots keyed (Rbp, disp).
+/// x86 stdcall callees popping their arguments are not modelled, so
+/// rsp-relative keys after such calls can drift (a stated limitation).
 struct TrackerState {
     std::array<Value, 19> regs{};
     std::map<std::pair<disasm::Reg, std::int64_t>, Value> stack;
+    std::int64_t rspDelta = 0; // bytes rsp currently is below its entry value
 
     Value& reg(disasm::Reg r) { return regs[static_cast<std::size_t>(r)]; }
     const Value& reg(disasm::Reg r) const { return regs[static_cast<std::size_t>(r)]; }
@@ -52,6 +62,9 @@ struct TrackerState {
         auto it = stack.find({base, offset});
         return it == stack.end() ? Value{} : it->second;
     }
+    /// The slot at [rsp + offset] for the current rsp, e.g. stackArg(0x20)
+    /// is the x64 5th argument just before a call.
+    Value stackArg(std::int64_t offset) const { return stackAt(disasm::Reg::Rsp, offset - rspDelta); }
     /// Reads the slot `offset` bytes into a structure whose address is `structAddr`.
     Value field(const Value& structAddr, std::int64_t offset) const {
         return structAddr.is(Value::Kind::Stack) ? stackAt(structAddr.base, structAddr.a + offset) : Value{};
@@ -76,6 +89,11 @@ public:
                            const Value& /*rcx*/) {}
     /// Before a call; `state` holds the argument registers and stack.
     virtual void onCall(const disasm::Instruction&, const CallInfo&, const TrackerState& /*state*/) {}
+    /// `cmp x, imm` or `sub x, imm` (`isSub`), with the value x held before
+    /// the instruction and the instruction that follows (usually the jcc
+    /// that consumes the flags), or nullptr at the end of the function.
+    virtual void onCompare(const disasm::Instruction&, const disasm::Instruction* /*next*/,
+                           const Value& /*lhs*/, std::int64_t /*imm*/, bool /*isSub*/) {}
 };
 
 struct TrackerContext {
