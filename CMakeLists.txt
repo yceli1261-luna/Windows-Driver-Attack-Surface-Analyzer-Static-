@@ -35,13 +35,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 # Dependencies (vcpkg manifest mode expected: configure with
 #   -DCMAKE_TOOLCHAIN_FILE=<vcpkg_root>/scripts/buildsystems/vcpkg.cmake)
 # Each package is found here once it has a consumer: spdlog + Qt (Phase 1),
-# LIEF + mbedTLS for core/pe (Phase 2). Capstone, SQLite3 and
-# nlohmann-json are already in vcpkg.json and get a find_package() here in
-# the phase that first uses them.
+# LIEF + mbedTLS for core/pe (Phase 2), Capstone for core/disasm (Phase 3).
+# SQLite3 and nlohmann-json are already in vcpkg.json and get a
+# find_package() here in the phase that first uses them.
 # ---------------------------------------------------------------------------
 find_package(spdlog CONFIG REQUIRED)
 find_package(LIEF CONFIG REQUIRED)
 find_package(MbedTLS CONFIG REQUIRED)
+find_package(capstone CONFIG REQUIRED)
 
 if(DASA_BUILD_APP)
     find_package(Qt6 COMPONENTS Widgets Core Gui REQUIRED)

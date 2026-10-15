@@ -10,7 +10,10 @@
       "features": ["gui", "widgets", "png", "freetype"]
     },
     "lief",
-    "capstone",
+    {
+      "name": "capstone",
+      "features": ["x86"]
+    },
     "spdlog",
     "sqlite3",
     "nlohmann-json",

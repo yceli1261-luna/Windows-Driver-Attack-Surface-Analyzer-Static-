@@ -2,12 +2,13 @@
 # implementations, the Ghidra headless backend). Depends on dasa_core only
 # - never on ui/ or app/.
 #
-# Phase 1: an empty INTERFACE-backed static target so the rest of the build
-# graph (app/ will link against it once analysis/static/StaticAnalysisPipeline
-# exists in Phase 2+) already has a stable target name to depend on.
+# static/StaticAnalysisPipeline is the one entry point the app calls; each
+# phase adds its stage there. heuristics/, ghidra/ and signatures/ are
+# populated by later phases.
 
 add_library(dasa_analysis STATIC
-    _phase1_placeholder.cpp
+    static/StaticAnalysisPipeline.h
+    static/StaticAnalysisPipeline.cpp
 )
 
 target_link_libraries(dasa_analysis

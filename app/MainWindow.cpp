@@ -19,8 +19,9 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
-#include "core/pe/PEParser.h"
+#include "analysis/static/StaticAnalysisPipeline.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/function_view/FunctionsWidget.h"
 
 namespace dasa::app {
 
@@ -176,6 +177,10 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_dashboard = new ui::DashboardWidget(dock);
             dock->setWidget(m_dashboard);
+        } else if (dock->objectName() == QLatin1String("dock_functions")) {
+            delete dock->widget();
+            m_functions = new ui::FunctionsWidget(dock);
+            dock->setWidget(m_functions);
         }
         addDockWidget(Qt::LeftDockWidgetArea, dock);
         if (firstLeft) {
@@ -324,57 +329,61 @@ void MainWindow::loadDriver(const QString& path) {
     spdlog::info("Driver file accepted: {}", path.toStdString());
     m_settings.setValue("lastDriverDir", info.absolutePath());
     const QString nativePath = QDir::toNativeSeparators(info.absoluteFilePath());
-    m_statusDriverLabel->setText(tr("Parsing %1...").arg(info.fileName()));
+    m_statusDriverLabel->setText(tr("Analyzing %1...").arg(info.fileName()));
     setWindowTitle(tr("%1 - Driver Attack Surface Analyzer").arg(info.fileName()));
     m_dashboard->showLoading(nativePath);
+    m_functions->clear();
     if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
         dock->show();
         dock->raise();
     }
 
-    // Parse off the GUI thread and hand the result back with a queued call.
-    // The generation counter drops results from a load that was superseded
-    // by a newer one while it was still running.
+    // Analyze off the GUI thread and hand the result back with a queued
+    // call. The generation counter drops results from a load that was
+    // superseded by a newer one while it was still running.
     const quint64 generation = ++m_loadGeneration;
     const std::filesystem::path fsPath = nativePath.toStdWString();
     QPointer<MainWindow> self(this);
     QThreadPool::globalInstance()->start([self, generation, fsPath, nativePath]() {
-        std::shared_ptr<core::pe::PEImage> image;
+        std::shared_ptr<const analysis::AnalysisResult> result;
         QString error;
         try {
-            image = std::make_shared<core::pe::PEImage>(core::pe::parsePE(fsPath));
+            result = analysis::runStaticAnalysis(fsPath);
         } catch (const std::exception& ex) {
             error = QString::fromStdString(ex.what());
-            spdlog::warn("PE parse failed for {}: {}", nativePath.toStdString(), ex.what());
+            spdlog::warn("Analysis failed for {}: {}", nativePath.toStdString(), ex.what());
         }
         QMetaObject::invokeMethod(
             qApp,
-            [self, generation, nativePath, image, error]() {
+            [self, generation, nativePath, result, error]() {
                 if (self && generation == self->m_loadGeneration) {
-                    self->onDriverParsed(nativePath, image, error);
+                    self->onAnalysisFinished(nativePath, result, error);
                 }
             },
             Qt::QueuedConnection);
     });
 }
 
-void MainWindow::onDriverParsed(const QString& path,
-                                const std::shared_ptr<core::pe::PEImage>& image,
-                                const QString& error) {
+void MainWindow::onAnalysisFinished(const QString& path,
+                                    const std::shared_ptr<const analysis::AnalysisResult>& result,
+                                    const QString& error) {
     const QString name = QFileInfo(path).fileName();
-    if (!image) {
+    if (!result) {
         m_dashboard->showError(path, error);
-        m_statusDriverLabel->setText(tr("Failed to parse %1").arg(name));
-        statusBar()->showMessage(tr("Could not parse %1: %2").arg(name, error), 8000);
+        m_statusDriverLabel->setText(tr("Failed to analyze %1").arg(name));
+        statusBar()->showMessage(tr("Could not analyze %1: %2").arg(name, error), 8000);
         return;
     }
-    m_dashboard->showImage(*image);
+    const auto& image = *result->image;
+    m_dashboard->showImage(image);
+    m_functions->setResult(result);
     m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
-    statusBar()->showMessage(tr("%1 parsed: %2 sections, %3 imports, %4 exports")
+    statusBar()->showMessage(tr("%1: %2 sections, %3 imports, %4 exports, %5 functions")
                                  .arg(name)
-                                 .arg(image->sections.size())
-                                 .arg(image->importedFunctionCount())
-                                 .arg(image->exports.size()),
+                                 .arg(image.sections.size())
+                                 .arg(image.importedFunctionCount())
+                                 .arg(image.exports.size())
+                                 .arg(result->functions->functions.size()),
                              8000);
 }
 

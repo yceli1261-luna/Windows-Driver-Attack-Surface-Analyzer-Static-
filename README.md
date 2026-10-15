@@ -21,6 +21,19 @@ Authenticode signature (signers, certificates, digest check). Loading a
 driver parses it on a worker thread and shows the result on the Dashboard
 (Sections / Imports / Exports / Headers / Signature tabs).
 
+**Phase 3 — disassembly and functions (done).** `core/disasm` wraps
+Capstone (x86/x64); `core/functions` finds functions by recursive-descent
+disassembly seeded from the entry point, exports, the x64 exception table
+(.pdata), direct call targets and code addresses loaded into registers,
+and builds each function's basic blocks and call sites (with IAT calls
+resolved to import names). `analysis/static/StaticAnalysisPipeline` runs
+parse + discovery on a worker thread; the Functions dock lists the
+functions (filterable, sortable) next to an annotated disassembly listing
+(double-click a call to open the callee). Known limits are documented in
+`core/functions/FunctionDiscoverer.h`: functions reachable only through
+computed pointers and lacking .pdata are missed, and switch-table jumps
+aren't followed.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -57,7 +70,16 @@ link step fails with LNK1168 (file in use).
 
 ## Tests
 
-`dasa_core_tests` (GoogleTest) covers `core/pe` against the two synthetic
-drivers in `tests/fixtures/drivers/` (expected values taken from pefile,
-the parser v1 used) and against `C:\Windows\System32\drivers\cng.sys` as a
-real embedded-signed driver (skipped if the file isn't present).
+`dasa_core_tests` (GoogleTest):
+
+- `core/pe` against the two synthetic drivers in `tests/fixtures/drivers/`
+  (expected values taken from pefile, the parser v1 used) and against
+  `C:\Windows\System32\drivers\cng.sys` as a real embedded-signed driver.
+- `core/disasm` against hand-encoded instructions (expected decodes from
+  the Intel SDM encodings).
+- `core/functions` against the fixtures (expected functions, instruction
+  and block counts derived from the generator script that wrote their
+  code bytes) and against cng.sys (every export, the entry point and every
+  primary .pdata entry must be found; call graph consistency).
+
+Tests that use cng.sys are skipped if the file isn't present.

@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -77,6 +79,20 @@ struct SignatureInfo {
     std::vector<std::string> certificateSubjects; // every cert in the blob
 };
 
+// One RUNTIME_FUNCTION entry from the x64 exception directory (.pdata).
+// Compilers emit one for every non-leaf function, which makes the table
+// the most reliable source of function starts on x64. A function whose
+// body is split (e.g. cold code moved away) has extra "chained" entries
+// whose unwind info points back at the primary entry.
+struct RuntimeFunction {
+    std::uint32_t begin = 0;        // RVA
+    std::uint32_t end = 0;          // RVA, exclusive
+    std::uint32_t unwindInfo = 0;   // RVA of UNWIND_INFO
+    std::uint32_t primaryBegin = 0; // begin of the non-chained root entry
+
+    bool isChained() const { return primaryBegin != begin; }
+};
+
 struct PEImage {
     std::filesystem::path path;
     std::string fileName;
@@ -120,10 +136,23 @@ struct PEImage {
     std::vector<ImportedLibrary> imports;
     std::vector<ExportedFunction> exports;
     SignatureInfo signature;
+    std::vector<RuntimeFunction> runtimeFunctions; // x64 .pdata, sorted by begin
+
+    // The image as the loader would lay it out: headers and each section's
+    // raw data copied to its RVA, zero-filled elsewhere (sizeOfImage bytes).
+    // Shared so copies of a PEImage don't duplicate it.
+    std::shared_ptr<const std::vector<std::uint8_t>> mappedImage;
 
     std::uint64_t entryPointVa() const { return entryPointRva ? imageBase + entryPointRva : 0; }
     std::size_t importedFunctionCount() const;
     bool checksumMatches() const { return headerChecksum == computedChecksum; }
+
+    /// Bytes from `rva` to the end of the mapped image (empty if out of range).
+    std::span<const std::uint8_t> bytesAt(std::uint64_t rva) const;
+    const Section* sectionContaining(std::uint64_t rva) const;
+    bool isExecutable(std::uint64_t rva) const;
+    /// Converts a virtual address to an RVA if it falls inside the image.
+    std::optional<std::uint64_t> vaToRva(std::uint64_t va) const;
 };
 
 } // namespace dasa::core::pe

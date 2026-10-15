@@ -1,5 +1,6 @@
 #include "core/pe/PEParser.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <ctime>
@@ -230,7 +231,137 @@ SignatureInfo collectSignature(const LIEF::PE::Binary& binary) {
     return info;
 }
 
+// Refuse to map absurd SizeOfImage values from malformed or hostile files.
+constexpr std::uint32_t kMaxMappedImage = 512u * 1024u * 1024u;
+
+std::shared_ptr<const std::vector<std::uint8_t>> mapImage(const LIEF::PE::Binary& binary,
+                                                          std::span<const std::uint8_t> file,
+                                                          std::uint32_t sizeOfImage,
+                                                          std::uint32_t sizeOfHeaders) {
+    if (sizeOfImage == 0 || sizeOfImage > kMaxMappedImage) {
+        throw PEParseError("Unreasonable SizeOfImage: " + std::to_string(sizeOfImage));
+    }
+    auto mapped = std::make_shared<std::vector<std::uint8_t>>(sizeOfImage, std::uint8_t{0});
+    const std::size_t headerBytes = std::min<std::size_t>({sizeOfHeaders, file.size(), sizeOfImage});
+    std::copy_n(file.begin(), headerBytes, mapped->begin());
+    for (const LIEF::PE::Section& s : binary.sections()) {
+        const auto content = s.content();
+        const std::uint64_t va = s.virtual_address();
+        if (va >= sizeOfImage) {
+            continue;
+        }
+        // Raw data beyond VirtualSize is file-alignment padding the loader
+        // doesn't map (when VirtualSize is set).
+        std::size_t n = content.size();
+        if (s.virtual_size() != 0) {
+            n = std::min<std::size_t>(n, s.virtual_size());
+        }
+        n = std::min<std::size_t>(n, sizeOfImage - va);
+        std::copy_n(content.begin(), n, mapped->begin() + static_cast<std::ptrdiff_t>(va));
+    }
+    return mapped;
+}
+
+std::uint32_t readU32(const std::vector<std::uint8_t>& image, std::uint64_t rva) {
+    if (rva + 4 > image.size()) {
+        return 0;
+    }
+    return static_cast<std::uint32_t>(image[rva]) | (static_cast<std::uint32_t>(image[rva + 1]) << 8) |
+           (static_cast<std::uint32_t>(image[rva + 2]) << 16) |
+           (static_cast<std::uint32_t>(image[rva + 3]) << 24);
+}
+
+// Reads the x64 exception directory (an array of 12-byte RUNTIME_FUNCTION
+// entries) and resolves chained entries to their primary function.
+std::vector<RuntimeFunction> collectRuntimeFunctions(const LIEF::PE::Binary& binary,
+                                                     const std::vector<std::uint8_t>& image,
+                                                     std::uint16_t machine) {
+    std::vector<RuntimeFunction> out;
+    if (machine != 0x8664) {
+        return out;
+    }
+    const auto* dir = binary.data_directory(LIEF::PE::DataDirectory::TYPES::EXCEPTION_TABLE);
+    if (dir == nullptr || dir->RVA() == 0 || dir->size() < 12) {
+        return out;
+    }
+    const std::uint64_t start = dir->RVA();
+    const std::uint64_t count = dir->size() / 12;
+    out.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t i = 0; i < count; ++i) {
+        const std::uint64_t at = start + i * 12;
+        if (at + 12 > image.size()) {
+            break;
+        }
+        RuntimeFunction rf;
+        rf.begin = readU32(image, at);
+        rf.end = readU32(image, at + 4);
+        rf.unwindInfo = readU32(image, at + 8);
+        if (rf.begin == 0 || rf.end <= rf.begin || rf.end > image.size()) {
+            continue;
+        }
+        rf.primaryBegin = rf.begin;
+        out.push_back(rf);
+    }
+
+    // UNWIND_INFO: byte 0 = version:3 | flags:5, byte 2 = CountOfCodes.
+    // With UNW_FLAG_CHAININFO (0x4) a RUNTIME_FUNCTION for the parent follows
+    // the (even-padded) unwind code array. Follow chains to the root, with a
+    // depth cap against cycles in malformed files.
+    for (auto& rf : out) {
+        std::uint32_t unwind = rf.unwindInfo;
+        for (int depth = 0; depth < 32; ++depth) {
+            if (unwind == 0 || unwind + 4 > image.size()) {
+                break;
+            }
+            const std::uint8_t flags = image[unwind] >> 3;
+            if ((flags & 0x4) == 0) {
+                break;
+            }
+            const std::uint32_t codes = image[unwind + 2];
+            const std::uint64_t parent = unwind + 4 + static_cast<std::uint64_t>((codes + 1) & ~1u) * 2;
+            const std::uint32_t parentBegin = readU32(image, parent);
+            if (parentBegin == 0) {
+                break;
+            }
+            rf.primaryBegin = parentBegin;
+            unwind = readU32(image, parent + 8);
+        }
+    }
+    std::sort(out.begin(), out.end(),
+              [](const RuntimeFunction& a, const RuntimeFunction& b) { return a.begin < b.begin; });
+    return out;
+}
+
 } // namespace
+
+std::span<const std::uint8_t> PEImage::bytesAt(std::uint64_t rva) const {
+    if (!mappedImage || rva >= mappedImage->size()) {
+        return {};
+    }
+    return std::span<const std::uint8_t>(*mappedImage).subspan(static_cast<std::size_t>(rva));
+}
+
+const Section* PEImage::sectionContaining(std::uint64_t rva) const {
+    for (const auto& s : sections) {
+        const std::uint64_t size = std::max(s.virtualSize, s.rawSize);
+        if (rva >= s.virtualAddress && rva < s.virtualAddress + size) {
+            return &s;
+        }
+    }
+    return nullptr;
+}
+
+bool PEImage::isExecutable(std::uint64_t rva) const {
+    const Section* s = sectionContaining(rva);
+    return s != nullptr && s->isExecutable();
+}
+
+std::optional<std::uint64_t> PEImage::vaToRva(std::uint64_t va) const {
+    if (va >= imageBase && va < imageBase + sizeOfImage) {
+        return va - imageBase;
+    }
+    return std::nullopt;
+}
 
 std::size_t PEImage::importedFunctionCount() const {
     std::size_t n = 0;
@@ -269,7 +400,8 @@ PEImage parsePE(const std::filesystem::path& path) {
     image.fileSize = data.size();
     image.hashes = computeHashes(data);
 
-    std::unique_ptr<LIEF::PE::Binary> binary = LIEF::PE::Parser::parse(std::move(data));
+    // LIEF takes the buffer by value; keep ours for mapping the headers.
+    std::unique_ptr<LIEF::PE::Binary> binary = LIEF::PE::Parser::parse(data);
     if (!binary) {
         throw PEParseError("Not a valid PE file: " + path.string());
     }
@@ -359,6 +491,8 @@ PEImage parsePE(const std::filesystem::path& path) {
     }
 
     image.signature = collectSignature(*binary);
+    image.mappedImage = mapImage(*binary, data, image.sizeOfImage, image.sizeOfHeaders);
+    image.runtimeFunctions = collectRuntimeFunctions(*binary, *image.mappedImage, image.machine);
 
     spdlog::info("Parsed {}: {} {}, {} sections, {} imports from {} libraries, {} exports, "
                  "embedded signature: {}",
