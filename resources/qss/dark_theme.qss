@@ -1,0 +1,114 @@
+/* DASA dark theme - layered on top of the Fusion QPalette set in
+ * ThemeManager::applyDarkTheme(). Targets the professional-tool look the
+ * brief asks for (dockable panels, tabs, sidebar nav) rather than the
+ * default Fusion chrome. */
+
+QMainWindow, QDialog {
+    background-color: #252526;
+}
+
+QMenuBar {
+    background-color: #2d2d30;
+    color: #dcdcdc;
+    border-bottom: 1px solid #1e1e1e;
+}
+
+QMenuBar::item {
+    padding: 6px 12px;
+    background: transparent;
+}
+
+QMenuBar::item:selected {
+    background-color: #3e3e42;
+}
+
+QMenu {
+    background-color: #2d2d30;
+    color: #dcdcdc;
+    border: 1px solid #1e1e1e;
+    padding: 4px 0;
+}
+
+QMenu::item {
+    padding: 6px 32px 6px 20px;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #3e3e42;
+    margin: 4px 8px;
+}
+
+QMenu::item:selected {
+    background-color: #0e639c;
+}
+
+QDockWidget {
+    color: #dcdcdc;
+    titlebar-close-icon: none;
+    titlebar-normal-icon: none;
+}
+
+QDockWidget::title {
+    background-color: #2d2d30;
+    padding: 6px 8px;
+    border: 1px solid #1e1e1e;
+}
+
+QTabBar::tab {
+    background-color: #2d2d30;
+    color: #b0b0b0;
+    padding: 6px 14px;
+    border: 1px solid #1e1e1e;
+    border-bottom: none;
+}
+
+QTabBar::scroller {
+    width: 24px;
+}
+
+QTabBar QToolButton {
+    background-color: #2d2d30;
+    border: 1px solid #1e1e1e;
+}
+
+QTabBar::tab:selected {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    border-bottom: 2px solid #0e639c;
+}
+
+QStatusBar {
+    background-color: #007acc;
+    color: #ffffff;
+}
+
+QScrollBar:vertical, QScrollBar:horizontal {
+    background-color: #2d2d30;
+    border: none;
+}
+
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background-color: #4a4a4e;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
+    background-color: #5a5a5e;
+}
+
+QHeaderView::section {
+    background-color: #2d2d30;
+    color: #dcdcdc;
+    padding: 4px;
+    border: 1px solid #1e1e1e;
+}
+
+QTableView, QTreeView, QListView {
+    background-color: #1e1e1e;
+    color: #dcdcdc;
+    alternate-background-color: #252526;
+    selection-background-color: #0e639c;
+    selection-color: #ffffff;
+    gridline-color: #3e3e42;
+}
