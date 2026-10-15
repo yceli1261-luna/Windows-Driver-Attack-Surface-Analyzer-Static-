@@ -3,21 +3,30 @@
 #include <QMainWindow>
 #include <QSettings>
 
+#include <memory>
+
 class QDockWidget;
-class QFileInfo;
 class QLabel;
 class QDragEnterEvent;
 class QDragMoveEvent;
 class QDropEvent;
 
+namespace dasa::core::pe {
+struct PEImage;
+}
+
+namespace dasa::ui {
+class DashboardWidget;
+}
+
 namespace dasa::app {
 
-/// Top-level application window. Phase 1 scope: the dock layout skeleton
-/// (empty dock widgets, one per workspace/research/dynamic/database/reports
-/// nav group from the product brief), persisted layout, dark theme, and
-/// .sys drag-and-drop that logs the dropped path. No analysis is wired in
-/// yet - that starts Phase 2, through a background job rather than on this
-/// thread.
+/// Top-level application window: the dock layout (one dock per
+/// workspace/research/dynamic/database/reports view from the product
+/// brief), persisted layout, dark theme, and driver loading via
+/// drag-and-drop, File > Open or --driver. Phase 2: loading a driver parses
+/// it on a worker thread and shows the PE image on the Dashboard. Other
+/// docks stay empty until the phase that implements their view.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -25,9 +34,9 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    /// Called from main() for `--driver <path>` and from the drag-and-drop
-    /// handler. Phase 1: validates the path exists and has a .sys
-    /// extension, updates the status bar, and logs it - no parsing yet.
+    /// Called from main() for `--driver <path>`, File > Open and the
+    /// drag-and-drop handler. Validates the path, then parses it in the
+    /// background; the Dashboard shows a loading state until it finishes.
     void loadDriver(const QString& path);
 
 protected:
@@ -42,12 +51,15 @@ private:
     void buildDockLayout();
     void buildStatusBar();
     QDockWidget* makeDock(const QString& title, const QString& objectName);
-    void showDriverSummary(const QFileInfo& info);
+    void onDriverParsed(const QString& path, const std::shared_ptr<core::pe::PEImage>& image,
+                        const QString& error);
     void restoreLayout();
     void saveLayout();
 
     QSettings m_settings;
     QLabel* m_statusDriverLabel = nullptr;
+    ui::DashboardWidget* m_dashboard = nullptr;
+    quint64 m_loadGeneration = 0;
 };
 
 } // namespace dasa::app

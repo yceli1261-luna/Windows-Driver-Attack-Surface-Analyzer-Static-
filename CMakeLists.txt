@@ -34,12 +34,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 # ---------------------------------------------------------------------------
 # Dependencies (vcpkg manifest mode expected: configure with
 #   -DCMAKE_TOOLCHAIN_FILE=<vcpkg_root>/scripts/buildsystems/vcpkg.cmake)
-# Phase 1 only needs Qt + spdlog; core/analysis/dynamic pull in
-# LIEF/Capstone/SQLite3/nlohmann-json starting Phase 2, but the targets
-# below already declare those link dependencies so later phases don't need
-# to touch this top-level file.
+# Each package is found here once it has a consumer: spdlog + Qt (Phase 1),
+# LIEF + mbedTLS for core/pe (Phase 2). Capstone, SQLite3 and
+# nlohmann-json are already in vcpkg.json and get a find_package() here in
+# the phase that first uses them.
 # ---------------------------------------------------------------------------
 find_package(spdlog CONFIG REQUIRED)
+find_package(LIEF CONFIG REQUIRED)
+find_package(MbedTLS CONFIG REQUIRED)
 
 if(DASA_BUILD_APP)
     find_package(Qt6 COMPONENTS Widgets Core Gui REQUIRED)
@@ -56,6 +58,7 @@ add_subdirectory(analysis)
 add_subdirectory(dynamic)
 
 if(DASA_BUILD_APP)
+    add_subdirectory(ui)
     add_subdirectory(app)
 endif()
 

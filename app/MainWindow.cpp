@@ -13,8 +13,14 @@
 #include <QMimeData>
 #include <QStatusBar>
 #include <QTabBar>
+#include <QPointer>
+#include <QThreadPool>
 #include <QUrl>
+#include <filesystem>
 #include <spdlog/spdlog.h>
+
+#include "core/pe/PEParser.h"
+#include "ui/dashboard/DashboardWidget.h"
 
 namespace dasa::app {
 
@@ -164,6 +170,13 @@ void MainWindow::buildDockLayout() {
     QDockWidget* firstLeft = nullptr;
     for (const auto& spec : kWorkspaceDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        if (dock->objectName() == QLatin1String("dock_dashboard")) {
+            // makeDock() gave it an empty placeholder; setWidget() doesn't
+            // delete the old one.
+            delete dock->widget();
+            m_dashboard = new ui::DashboardWidget(dock);
+            dock->setWidget(m_dashboard);
+        }
         addDockWidget(Qt::LeftDockWidgetArea, dock);
         if (firstLeft) {
             tabifyDockWidget(firstLeft, dock);
@@ -308,50 +321,61 @@ void MainWindow::loadDriver(const QString& path) {
         return;
     }
 
-    // Phase 1: acknowledge the file and show its basic details on the
-    // Dashboard. Phase 2 replaces this with JobManager::submit(PEParser(path))
-    // and populates the Dashboard/Drivers docks from the result on the GUI
-    // thread via a queued signal, never by analyzing inline here.
     spdlog::info("Driver file accepted: {}", path.toStdString());
     m_settings.setValue("lastDriverDir", info.absolutePath());
-    m_statusDriverLabel->setText(tr("Loaded: %1").arg(info.fileName()));
-    statusBar()->showMessage(tr("%1 loaded").arg(info.fileName()), 5000);
+    const QString nativePath = QDir::toNativeSeparators(info.absoluteFilePath());
+    m_statusDriverLabel->setText(tr("Parsing %1...").arg(info.fileName()));
     setWindowTitle(tr("%1 - Driver Attack Surface Analyzer").arg(info.fileName()));
-    showDriverSummary(info);
-}
-
-void MainWindow::showDriverSummary(const QFileInfo& info) {
-    auto* dashboard = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"));
-    if (!dashboard) {
-        return;
+    m_dashboard->showLoading(nativePath);
+    if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
+        dock->show();
+        dock->raise();
     }
 
-    auto* summary = new QLabel(dashboard);
-    summary->setTextFormat(Qt::RichText);
-    summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    summary->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    summary->setMargin(24);
-    summary->setWordWrap(true);
-    summary->setText(
-        tr("<h2>%1</h2>"
-           "<table cellspacing='6'>"
-           "<tr><td><b>Path</b></td><td>%2</td></tr>"
-           "<tr><td><b>Size</b></td><td>%3 (%4 bytes)</td></tr>"
-           "<tr><td><b>Modified</b></td><td>%5</td></tr>"
-           "</table>"
-           "<p style='color:#9a9a9a'>Driver loaded. Static analysis (PE parsing, imports, "
-           "IOCTLs, findings) is not implemented yet - it arrives in Phase 2.</p>")
-            .arg(info.fileName().toHtmlEscaped(),
-                 QDir::toNativeSeparators(info.absoluteFilePath()).toHtmlEscaped(),
-                 locale().formattedDataSize(info.size()),
-                 QString::number(info.size()),
-                 info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))));
+    // Parse off the GUI thread and hand the result back with a queued call.
+    // The generation counter drops results from a load that was superseded
+    // by a newer one while it was still running.
+    const quint64 generation = ++m_loadGeneration;
+    const std::filesystem::path fsPath = nativePath.toStdWString();
+    QPointer<MainWindow> self(this);
+    QThreadPool::globalInstance()->start([self, generation, fsPath, nativePath]() {
+        std::shared_ptr<core::pe::PEImage> image;
+        QString error;
+        try {
+            image = std::make_shared<core::pe::PEImage>(core::pe::parsePE(fsPath));
+        } catch (const std::exception& ex) {
+            error = QString::fromStdString(ex.what());
+            spdlog::warn("PE parse failed for {}: {}", nativePath.toStdString(), ex.what());
+        }
+        QMetaObject::invokeMethod(
+            qApp,
+            [self, generation, nativePath, image, error]() {
+                if (self && generation == self->m_loadGeneration) {
+                    self->onDriverParsed(nativePath, image, error);
+                }
+            },
+            Qt::QueuedConnection);
+    });
+}
 
-    // setWidget() doesn't delete the previous content widget.
-    delete dashboard->widget();
-    dashboard->setWidget(summary);
-    dashboard->show();
-    dashboard->raise();
+void MainWindow::onDriverParsed(const QString& path,
+                                const std::shared_ptr<core::pe::PEImage>& image,
+                                const QString& error) {
+    const QString name = QFileInfo(path).fileName();
+    if (!image) {
+        m_dashboard->showError(path, error);
+        m_statusDriverLabel->setText(tr("Failed to parse %1").arg(name));
+        statusBar()->showMessage(tr("Could not parse %1: %2").arg(name, error), 8000);
+        return;
+    }
+    m_dashboard->showImage(*image);
+    m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
+    statusBar()->showMessage(tr("%1 parsed: %2 sections, %3 imports, %4 exports")
+                                 .arg(name)
+                                 .arg(image->sections.size())
+                                 .arg(image->importedFunctionCount())
+                                 .arg(image->exports.size()),
+                             8000);
 }
 
 } // namespace dasa::app

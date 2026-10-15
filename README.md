@@ -7,58 +7,57 @@ Python implementation lives at the repository root (`main.py`, `analysis/`,
 `parser/`, etc.) and is left untouched — it's the behavioral reference this
 rewrite is validated against, not code being migrated line-by-line.
 
-## Phase 1 status
+## Status
 
-CMake project skeleton + Qt 6 application shell: dock layout (one empty
-dock per WORKSPACE/RESEARCH/DYNAMIC/DATABASE/REPORTS group from the brief),
-persisted window layout, dark theme, `.sys` drag-and-drop (validates and
-logs the path; does not parse yet). `core`/`analysis`/`dynamic` are empty
-static libraries that build and link, establishing the target graph later
-phases add real sources to.
+**Phase 1 — application shell (done).** CMake project, Qt 6 window with
+the dock layout (one dock per WORKSPACE/RESEARCH/DYNAMIC/DATABASE/REPORTS
+view from the brief), persisted layout, dark theme, driver loading by
+drag-and-drop, File > Open (Ctrl+O) or `--driver <path>`.
+
+**Phase 2 — PE engine (done).** `core/pe` parses a driver with LIEF:
+headers, sections (with entropy), imports, exports, CodeView PDB path,
+header vs. computed checksum, MD5/SHA-1/SHA-256, and the embedded
+Authenticode signature (signers, certificates, digest check). Loading a
+driver parses it on a worker thread and shows the result on the Dashboard
+(Sections / Imports / Exports / Headers / Signature tabs).
+
+The other docks are still empty; each is filled by the phase that
+implements its view.
 
 ## Prerequisites (Windows)
 
-- Visual Studio 2022 (MSVC v143 toolset, "Desktop development with C++")
-- CMake >= 3.25 (bundled with VS, or standalone)
-- Qt 6 (Widgets, Core, Gui) — via the Qt installer or vcpkg
-- [vcpkg](https://github.com/microsoft/vcpkg), with `VCPKG_ROOT` set, for
-  LIEF / Capstone / spdlog / SQLite3 / nlohmann-json / GoogleTest
-  (`vcpkg.json` manifest mode — no manual `vcpkg install` needed)
+- Visual Studio 2022 with "Desktop development with C++" (MSVC, plus the
+  bundled CMake and Ninja)
+- [vcpkg](https://github.com/microsoft/vcpkg) cloned to e.g. `C:\vcpkg`.
+  Dependencies (Qt, LIEF, Capstone, spdlog, SQLite3, nlohmann-json,
+  GoogleTest) come from `vcpkg.json` in manifest mode — no manual
+  `vcpkg install`. The first configure builds them, which takes a while
+  (Qt is the slow one); later configures reuse vcpkg's binary cache.
 
-If Qt isn't installed via vcpkg, point CMake at your Qt kit, e.g. add
-`-DCMAKE_PREFIX_PATH=C:/Qt/6.7.2/msvc2019_64` to the configure command
-below (or set it in a local `CMakeUserPresets.json`, which is gitignored).
+## Build and test
 
-## Build
-
-From a **Developer PowerShell for VS 2022**, with `VCPKG_ROOT` set:
+The default presets use Ninja and `cl`, so they need an x64 MSVC
+environment. Run from a normal PowerShell in this directory:
 
 ```powershell
-cmake --preset windows-msvc-debug
-cmake --build --preset windows-msvc-debug
+cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && set VCPKG_ROOT=C:\vcpkg&& cmake --preset windows-msvc-debug && cmake --build --preset windows-msvc-debug && ctest --preset windows-msvc-debug'
 ```
 
-The app binary lands at `build/debug/bin/dasa.exe`.
+- `vcvars64.bat` sets `VCPKG_ROOT` to the copy of vcpkg bundled with Visual
+  Studio, so set it back to your clone afterwards, as above. (Keep
+  `C:\vcpkg&&` with no space, or cmd adds a trailing space to the path.)
+- The `windows-vs2022-debug` preset uses the Visual Studio generator
+  instead and doesn't need vcvars, but only works when Visual Studio
+  reports its installation as complete.
+- If the build was configured with a different generator before, delete
+  `build/` first.
 
-## Test
+The app is `build/debug/bin/dasa.exe`. Close it before rebuilding, or the
+link step fails with LNK1168 (file in use).
 
-```powershell
-ctest --preset windows-msvc-debug
-```
+## Tests
 
-(Currently one suite, `dasa_core_tests`, confirming `dasa_core` builds,
-links, and reports the right version — the real per-module suites land
-alongside their modules starting Phase 2.)
-
-## Phase 1 verification checklist
-
-This was scaffolded by a cloud session with file access only (no compiler,
-shell, or GUI on this machine), so none of the following has been run yet.
-Before calling Phase 1 done:
-
-- [ ] `cmake --preset windows-msvc-debug` configures without error
-- [ ] `cmake --build --preset windows-msvc-debug` builds `dasa_core`,
-      `dasa_analysis`, `dasa_dynamic`, `dasa_app`, `dasa_core_tests`
-- [ ] `ctest --preset windows-msvc-debug` passes
-- [ ] `build/debug/bin/dasa.exe` launches, shows the dark-themed dock
-      layout, and dragging a `.sys` file onto it updates the status bar
+`dasa_core_tests` (GoogleTest) covers `core/pe` against the two synthetic
+drivers in `tests/fixtures/drivers/` (expected values taken from pefile,
+the parser v1 used) and against `C:\Windows\System32\drivers\cng.sys` as a
+real embedded-signed driver (skipped if the file isn't present).

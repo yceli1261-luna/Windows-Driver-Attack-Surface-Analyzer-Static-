@@ -21,6 +21,7 @@ target_link_libraries(dasa_app
         Qt6::Core
         Qt6::Gui
         dasa_core
+        dasa_ui
         dasa_analysis
         dasa_dynamic
         spdlog::spdlog
