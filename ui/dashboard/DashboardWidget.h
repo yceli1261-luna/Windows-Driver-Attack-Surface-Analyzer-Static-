@@ -28,6 +28,9 @@ public:
     void showLoading(const QString& path);
     void showError(const QString& path, const QString& message);
     void showImage(const dasa::core::pe::PEImage& image);
+    /// Adds a view built from later analysis stages (e.g. Kernel APIs) to
+    /// the tab row next to the PE tables.
+    void insertTab(int index, QWidget* widget, const QString& title);
 
 private:
     QWidget* buildMessagePage();

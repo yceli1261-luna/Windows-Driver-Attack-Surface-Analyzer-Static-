@@ -39,6 +39,8 @@ std::shared_ptr<const AnalysisResult> runStaticAnalysis(const std::filesystem::p
         core::ioctl::extractIoctls(*image, *result->functions, *result->driver));
     result->devices = std::make_shared<const core::driver::DeviceAnalysis>(
         core::driver::analyzeDevices(*image, *result->functions, *result->driver));
+    result->kernelApis = std::make_shared<const core::security::KernelApiAnalysis>(
+        core::security::analyzeKernelApis(*image, *result->functions, *result->driver, *result->ioctls));
     result->surfaceSeconds = secondsSince(start);
     result->image = std::move(image);
 

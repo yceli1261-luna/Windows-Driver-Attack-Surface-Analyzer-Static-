@@ -11,10 +11,14 @@
 
 #include "core/driver/ValueTracker.h"
 #include "core/driver/WdfFunctionTable.h"
+#include "core/pe/ImageStrings.h"
 
 namespace dasa::core::driver {
 
 using disasm::Reg;
+using pe::guidAt;
+using pe::unicodeStringAt;
+using pe::utf16At;
 using Kind = Value::Kind;
 
 namespace {
@@ -25,71 +29,6 @@ std::string_view importFunction(const std::string& importName) {
     const auto bang = importName.rfind('!');
     return bang == std::string::npos ? std::string_view(importName)
                                      : std::string_view(importName).substr(bang + 1);
-}
-
-std::uint64_t readLe(std::span<const std::uint8_t> b, std::size_t n) {
-    std::uint64_t v = 0;
-    for (std::size_t i = 0; i < n && i < b.size(); ++i) {
-        v |= static_cast<std::uint64_t>(b[i]) << (8 * i);
-    }
-    return v;
-}
-
-// UTF-16LE at `rva` up to a NUL or `maxChars` characters (a counted
-// UNICODE_STRING needn't be NUL-terminated); non-ASCII becomes '?'. Fails
-// only if the image ends first.
-std::optional<std::string> utf16At(const pe::PEImage& image, std::uint64_t rva, std::size_t maxChars) {
-    const auto bytes = image.bytesAt(rva);
-    std::string out;
-    for (std::size_t i = 0; i + 1 < bytes.size(); i += 2) {
-        if (out.size() == maxChars) {
-            return out;
-        }
-        const unsigned c = bytes[i] | (bytes[i + 1] << 8);
-        if (c == 0) {
-            return out;
-        }
-        out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
-    }
-    return std::nullopt;
-}
-
-// A UNICODE_STRING {Length, MaximumLength, Buffer} stored at `rva`
-// (RTL_CONSTANT_STRING / DECLARE_CONST_UNICODE_STRING in .rdata/.data).
-std::optional<std::string> unicodeStringAt(const pe::PEImage& image, std::uint64_t rva) {
-    const bool x64 = image.machine == 0x8664;
-    const auto b = image.bytesAt(rva);
-    if (b.size() < (x64 ? 16u : 8u)) {
-        return std::nullopt;
-    }
-    const auto length = static_cast<std::uint16_t>(readLe(b, 2));
-    const auto maxLength = static_cast<std::uint16_t>(readLe(b.subspan(2), 2));
-    const std::uint64_t buffer = readLe(b.subspan(x64 ? 8 : 4), x64 ? 8 : 4);
-    if (length == 0 || length % 2 != 0 || length > maxLength || length > kMaxNameChars * 2) {
-        return std::nullopt;
-    }
-    const auto bufferRva = image.vaToRva(buffer);
-    if (!bufferRva) {
-        return std::nullopt;
-    }
-    auto s = utf16At(image, *bufferRva, length / 2);
-    if (s && s->size() > length / 2) {
-        s->resize(length / 2);
-    }
-    return s;
-}
-
-std::string guidAt(const pe::PEImage& image, std::uint64_t rva) {
-    const auto b = image.bytesAt(rva);
-    if (b.size() < 16) {
-        return {};
-    }
-    char buf[48];
-    std::snprintf(buf, sizeof(buf), "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-                  static_cast<unsigned>(readLe(b, 4)), static_cast<unsigned>(readLe(b.subspan(4), 2)),
-                  static_cast<unsigned>(readLe(b.subspan(6), 2)), b[8], b[9], b[10], b[11], b[12], b[13],
-                  b[14], b[15]);
-    return buf;
 }
 
 class Collector : public TrackerHooks {

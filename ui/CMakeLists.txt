@@ -2,7 +2,7 @@
 # architecture proposal). Views are presentational: they receive finished
 # analysis results and never run analysis themselves. Phase 2 adds
 # dashboard/, Phase 3 function_view/, Phase 4 driver_view/, Phase 5
-# ioctl_view/ and driver_view/DevicesWidget.
+# ioctl_view/ and driver_view/DevicesWidget, Phase 6 security_view/.
 
 add_library(dasa_ui STATIC
     dashboard/DashboardWidget.h
@@ -15,6 +15,8 @@ add_library(dasa_ui STATIC
     driver_view/DevicesWidget.cpp
     ioctl_view/IoctlWidget.h
     ioctl_view/IoctlWidget.cpp
+    security_view/KernelApiWidget.h
+    security_view/KernelApiWidget.cpp
 )
 
 target_include_directories(dasa_ui

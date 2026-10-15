@@ -5,13 +5,16 @@
 # driver/, ioctl/, dataflow/, security/, findings/, database/) is the layout
 # agreed in the architecture proposal; empty ones keep a .gitkeep until the
 # phase that populates them. Phase 2 adds pe/, Phase 3 disasm/ and
-# functions/, Phase 4 driver/, Phase 5 ioctl/ and driver/DeviceObjects.
+# functions/, Phase 4 driver/, Phase 5 ioctl/ and driver/DeviceObjects,
+# Phase 6 security/.
 
 add_library(dasa_core STATIC
     Version.cpp
     pe/PEImage.h
     pe/PEParser.h
     pe/PEParser.cpp
+    pe/ImageStrings.h
+    pe/ImageStrings.cpp
     disasm/Instruction.h
     disasm/Disassembler.h
     disasm/Disassembler.cpp
@@ -31,6 +34,10 @@ add_library(dasa_core STATIC
     ioctl/IoctlCodec.cpp
     ioctl/IoctlExtractor.h
     ioctl/IoctlExtractor.cpp
+    security/ApiCatalog.h
+    security/ApiCatalog.cpp
+    security/KernelApiAnalyzer.h
+    security/KernelApiAnalyzer.cpp
 )
 
 target_include_directories(dasa_core

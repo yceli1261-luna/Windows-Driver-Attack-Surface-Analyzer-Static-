@@ -75,6 +75,18 @@ characteristics, symbolic-link and interface DDIs: device names, types,
 `FILE_DEVICE_SECURE_OPEN`, exclusivity, SDDL, and each link paired with
 the device name actually passed. Shown in the IOCTLs and Devices docks.
 
+**Phase 6 — kernel API risk (done).** `core/security/ApiCatalog` grades
+kernel APIs (critical / high / medium / info) by what they let a caller
+do with arguments it controls, with a one-line reason; uncatalogued APIs
+are categorised by name prefix. `core/security/KernelApiAnalyzer` adds the
+call sites of every import, names resolved at runtime through
+`MmGetSystemRoutineAddress`, privileged instructions compiled from
+intrinsics (MSR, port I/O, control/debug registers, descriptor tables),
+and which entry points (DriverEntry, IRP routines, DriverUnload /
+AddDevice / StartIo, KMDF callbacks) reach each call site through the call
+graph. Shown on the Dashboard's Kernel APIs tab. Risk rates the primitive,
+not the driver; whether user input reaches it is for the data-flow phase.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -138,6 +150,11 @@ link step fails with LNK1168 (file in use).
   characteristics, interface), the 24 codes of `DASARiskyDriver.sys`, and
   real beep.sys (IOCTL_BEEP_SET, `\Device\Beep`) and null.sys (no IOCTL
   handler, `\Device\Null`).
+
+- Kernel API classification and reachability against `DASAWdmSample.sys`
+  (MmMapIoSpace, `wrmsr` and `in` only reachable from
+  IRP_MJ_DEVICE_CONTROL; ZwQuerySystemInformation resolved at runtime from
+  DriverEntry) and the risky fixture's imports.
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

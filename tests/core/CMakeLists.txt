@@ -5,6 +5,7 @@ add_executable(dasa_core_tests
     FunctionDiscovererTest.cpp
     DriverAnalyzerTest.cpp
     AttackSurfaceTest.cpp
+    KernelApiTest.cpp
 )
 
 target_link_libraries(dasa_core_tests

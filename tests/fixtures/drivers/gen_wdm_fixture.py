@@ -9,6 +9,8 @@ are known from this script, independently of DASA:
                              0 (no FILE_DEVICE_SECURE_OPEN), FALSE, &DevObj)
               RtlInitUnicodeString(&LinkName, L"\\DosDevices\\DasaWdm")
               IoCreateSymbolicLink(&LinkName, &DeviceName)
+              RtlInitUnicodeString(&RoutineName, L"ZwQuerySystemInformation")
+              MmGetSystemRoutineAddress(&RoutineName)
               MajorFunction[IRP_MJ_CREATE] = MajorFunction[IRP_MJ_CLOSE] = 0x1400
               MajorFunction[IRP_MJ_DEVICE_CONTROL] = 0x1200
               DriverUnload = 0x1410
@@ -22,7 +24,9 @@ are known from this script, independently of DASA:
                 0x00222008..0x00222028 (cases not followed)
               default: Helper(DeviceObject, code)
   RVA 0x1300  Helper: code == 0x0022E00B (METHOD_NEITHER,
-              FILE_READ|WRITE_ACCESS) -> 0x1312
+              FILE_READ|WRITE_ACCESS) -> 0x1312, which calls
+              MmMapIoSpace and executes `wrmsr` and `in al, dx`
+              (so these are reachable from IRP_MJ_DEVICE_CONTROL)
   RVA 0x1400  CreateClose: xor eax, eax; ret
   RVA 0x1410  DriverUnload: ret
 
@@ -43,6 +47,7 @@ TEXT_RVA, RDATA_RVA, DATA_RVA = 0x1000, 0x2000, 0x3000
 
 DEVICE_TEXT = RDATA_RVA + 0x300
 LINK_TEXT = RDATA_RVA + 0x340
+ROUTINE_TEXT = RDATA_RVA + 0x380
 JUMP_TABLE = RDATA_RVA + 0x400
 
 FN = {
@@ -62,7 +67,7 @@ def build_text(iat: dict[str, int]) -> bytes:
         place(text, TEXT_RVA, rva, bytes(a.code))
 
     a = Asm(FN["DriverEntry"])
-    a.raw("53 57 48 83 EC 78")                    # push rbx; push rdi; sub rsp, 0x78
+    a.raw("53 57 48 81 EC" + imm32(0x98))         # push rbx; push rdi; sub rsp, 0x98
     a.raw("48 8B F9")                             # mov rdi, rcx (DriverObject)
     a.raw("48 8D 4C 24 40")                       # lea rcx, [rsp+0x40]   &DeviceName
     a.rip("48 8D 15", DEVICE_TEXT)                # lea rdx, [L"\\Device\\DasaWdm"]
@@ -79,6 +84,11 @@ def build_text(iat: dict[str, int]) -> bytes:
     a.rip("FF 15", iat["RtlInitUnicodeString"])
     a.raw("48 8D 4C 24 60 48 8D 54 24 40")        # &LinkName, &DeviceName
     a.rip("FF 15", iat["IoCreateSymbolicLink"])
+    a.raw("48 8D 4C 24 70")                       # lea rcx, [rsp+0x70]   &RoutineName
+    a.rip("48 8D 15", ROUTINE_TEXT)
+    a.rip("FF 15", iat["RtlInitUnicodeString"])
+    a.raw("48 8D 4C 24 70")
+    a.rip("FF 15", iat["MmGetSystemRoutineAddress"])
     a.rip("48 8D 05", FN["CreateClose"])
     a.raw("48 89 47 70")                          # MajorFunction[IRP_MJ_CREATE]
     a.raw("48 89 87" + imm32(0x80))               # MajorFunction[IRP_MJ_CLOSE]
@@ -86,7 +96,7 @@ def build_text(iat: dict[str, int]) -> bytes:
     a.raw("48 89 87" + imm32(0xE0))               # MajorFunction[IRP_MJ_DEVICE_CONTROL]
     a.rip("48 8D 05", FN["DriverUnload"])
     a.raw("48 89 47 68")                          # DriverUnload
-    a.raw("33 C0 48 83 C4 78 5F 5B C3")
+    a.raw("33 C0 48 81 C4" + imm32(0x98) + "5F 5B C3")
     put(FN["DriverEntry"], a)
 
     a = Asm(FN["DeviceControl"])
@@ -117,7 +127,14 @@ def build_text(iat: dict[str, int]) -> bytes:
     a.jcc32("0F 84", FN["Helper"] + 0x12)
     a.raw("33 C0 C3 90 90 90")                    # xor eax, eax; ret
     assert a.here() == FN["Helper"] + 0x12, hex(a.here())
+    a.raw("48 83 EC 28")                          # sub rsp, 0x28
+    a.raw("33 C9 BA" + imm32(0x1000) + "45 33 C0")  # PhysicalAddress 0, 0x1000 bytes, MmNonCached
+    a.rip("FF 15", iat["MmMapIoSpace"])
+    a.raw("48 83 C4 28")
+    a.raw("33 C9 0F 30")                          # xor ecx, ecx; wrmsr
+    a.raw("EC")                                   # in al, dx
     a.raw("B8" + imm32(1) + "C3")
+    assert a.here() <= FN["CreateClose"], hex(a.here())
     put(FN["Helper"], a)
 
     put(FN["CreateClose"], Asm(FN["CreateClose"]).raw("33 C0 C3"))
@@ -130,9 +147,10 @@ def build_rdata() -> tuple[bytes, dict[str, int], tuple[int, int]]:
     iat, idt_rva, idt_size = build_imports(
         rdata, RDATA_RVA, 0x100,
         {"ntoskrnl.exe": ["RtlInitUnicodeString", "IoCreateDevice", "IoCreateSymbolicLink",
-                          "IofCompleteRequest"]})
+                          "IofCompleteRequest", "MmMapIoSpace", "MmGetSystemRoutineAddress"]})
     place(rdata, RDATA_RVA, DEVICE_TEXT, utf16z("\\Device\\DasaWdm"))
     place(rdata, RDATA_RVA, LINK_TEXT, utf16z("\\DosDevices\\DasaWdm"))
+    place(rdata, RDATA_RVA, ROUTINE_TEXT, utf16z("ZwQuerySystemInformation"))
     for i in range(0x21):
         struct.pack_into("<Q", rdata, JUMP_TABLE - RDATA_RVA + i * 8, IMAGE_BASE + CASE_C)
     return bytes(rdata), iat, (idt_rva, idt_size)

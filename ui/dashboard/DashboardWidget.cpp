@@ -168,6 +168,10 @@ QWidget* DashboardWidget::buildImagePage() {
     return page;
 }
 
+void DashboardWidget::insertTab(int index, QWidget* widget, const QString& title) {
+    m_tabs->insertTab(index, widget, title);
+}
+
 void DashboardWidget::showEmpty() {
     m_message->setText(tr("<h2>No driver loaded</h2>"
                           "<p style='color:#9a9a9a'>Drag a <b>.sys</b> file onto the window, "
@@ -196,9 +200,9 @@ void DashboardWidget::showImage(const pe::PEImage& image) {
     fillHeaders(image);
     fillSignature(image);
 
-    m_tabs->setTabText(0, tr("Sections (%1)").arg(image.sections.size()));
-    m_tabs->setTabText(1, tr("Imports (%1)").arg(image.importedFunctionCount()));
-    m_tabs->setTabText(2, tr("Exports (%1)").arg(image.exports.size()));
+    m_tabs->setTabText(m_tabs->indexOf(m_sections), tr("Sections (%1)").arg(image.sections.size()));
+    m_tabs->setTabText(m_tabs->indexOf(m_imports), tr("Imports (%1)").arg(image.importedFunctionCount()));
+    m_tabs->setTabText(m_tabs->indexOf(m_exports), tr("Exports (%1)").arg(image.exports.size()));
     m_stack->setCurrentIndex(1);
 }
 

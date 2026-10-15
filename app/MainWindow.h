@@ -21,6 +21,7 @@ class DevicesWidget;
 class DriverModelWidget;
 class FunctionsWidget;
 class IoctlWidget;
+class KernelApiWidget;
 }
 
 namespace dasa::app {
@@ -31,7 +32,7 @@ namespace dasa::app {
 /// drag-and-drop, File > Open or --driver. Loading a driver runs the static
 /// analysis pipeline on a worker thread; the result fills the Dashboard
 /// (Phase 2), Functions (Phase 3), IRP Handlers (Phase 4), IOCTLs and
-/// Devices (Phase 5) docks. Other docks stay empty until the phase that
+/// Devices (Phase 5) docks and the Dashboard's Kernel APIs tab (Phase 6). Other docks stay empty until the phase that
 /// implements their view.
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -70,6 +71,7 @@ private:
     ui::DriverModelWidget* m_driverModel = nullptr;
     ui::IoctlWidget* m_ioctls = nullptr;
     ui::DevicesWidget* m_devices = nullptr;
+    ui::KernelApiWidget* m_kernelApis = nullptr;
     quint64 m_loadGeneration = 0;
 };
 
