@@ -7,6 +7,7 @@ add_executable(dasa_core_tests
     AttackSurfaceTest.cpp
     KernelApiTest.cpp
     FindingsTest.cpp
+    DatabaseReportTest.cpp
 )
 
 target_link_libraries(dasa_core_tests
@@ -15,6 +16,8 @@ target_link_libraries(dasa_core_tests
         dasa_analysis
         GTest::gtest
         GTest::gtest_main
+        nlohmann_json::nlohmann_json
+        unofficial::sqlite3::sqlite3
 )
 
 target_compile_definitions(dasa_core_tests

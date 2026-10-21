@@ -14,13 +14,19 @@
 #include <QStatusBar>
 #include <QTabBar>
 #include <QPointer>
+#include <QScrollArea>
+#include <QStandardPaths>
 #include <QThreadPool>
 #include <QUrl>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
+#include "analysis/report/ReportWriter.h"
 #include "analysis/static/StaticAnalysisPipeline.h"
+#include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/database_view/CompareWidget.h"
+#include "ui/database_view/HistoryWidget.h"
 #include "ui/driver_view/DevicesWidget.h"
 #include "ui/findings_view/EvidenceWidget.h"
 #include "ui/findings_view/FindingsWidget.h"
@@ -28,6 +34,7 @@
 #include "ui/driver_view/DriverModelWidget.h"
 #include "ui/function_view/FunctionsWidget.h"
 #include "ui/ioctl_view/IoctlWidget.h"
+#include "ui/report_view/ExportWidget.h"
 #include "ui/security_view/KernelApiWidget.h"
 
 namespace dasa::app {
@@ -105,7 +112,7 @@ bool containsDriverUrl(const QMimeData* mime) {
 
 // Bump when the default dock arrangement changes so previously saved
 // layouts are discarded instead of restored over the new default.
-constexpr int kLayoutVersion = 3;
+constexpr int kLayoutVersion = 6;
 constexpr int kRightColumnWidth = 330;
 constexpr int kBottomStripHeight = 200;
 
@@ -121,12 +128,30 @@ MainWindow::MainWindow(QWidget* parent)
     buildMenus();
     buildDockLayout();
     buildStatusBar();
+    openDatabase();
     restoreLayout();
 
     spdlog::info("MainWindow constructed");
 }
 
 MainWindow::~MainWindow() = default;
+
+void MainWindow::openDatabase() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    QDir().mkpath(dir);
+    m_dbPath = QDir(dir).filePath(QStringLiteral("dasa.db"));
+    QString error;
+    try {
+        m_db = std::make_shared<core::database::AnalysisDatabase>(m_dbPath.toStdWString());
+        spdlog::info("Analysis database: {}", m_dbPath.toStdString());
+    } catch (const std::exception& ex) {
+        error = QString::fromStdString(ex.what());
+        spdlog::warn("Could not open the analysis database {}: {}", m_dbPath.toStdString(), ex.what());
+    }
+    m_history->setDatabase(m_db, m_dbPath, error);
+    m_compare->setDatabase(m_db);
+    m_previousFindings->setDatabase(m_db);
+}
 
 void MainWindow::buildMenus() {
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
@@ -141,6 +166,24 @@ void MainWindow::buildMenus() {
             loadDriver(path);
         }
     });
+    fileMenu->addSeparator();
+    QAction* exportHtml = fileMenu->addAction(tr("Export &HTML Report..."));
+    exportHtml->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_E));
+    QAction* exportJson = fileMenu->addAction(tr("Export &JSON..."));
+    exportJson->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E));
+    const auto runExport = [this](bool html) {
+        if (!m_export->hasResult()) {
+            statusBar()->showMessage(tr("Load a driver first - there is nothing to export yet."), 5000);
+            return;
+        }
+        if (html) {
+            m_export->exportHtml();
+        } else {
+            m_export->exportJson();
+        }
+    };
+    connect(exportHtml, &QAction::triggered, this, [runExport] { runExport(true); });
+    connect(exportJson, &QAction::triggered, this, [runExport] { runExport(false); });
     fileMenu->addSeparator();
     QAction* exitAction = fileMenu->addAction(tr("E&xit"));
     exitAction->setShortcut(QKeySequence::Quit);
@@ -189,8 +232,15 @@ void MainWindow::buildDockLayout() {
             // makeDock() gave it an empty placeholder; setWidget() doesn't
             // delete the old one.
             delete dock->widget();
-            m_dashboard = new ui::DashboardWidget(dock);
-            dock->setWidget(m_dashboard);
+            // In a scroll area: the Dashboard's content is tall once a driver
+            // is loaded, and as a plain dock widget its minimum height pushed
+            // the bottom strip and status bar off a 1080p screen.
+            auto* scroll = new QScrollArea(dock);
+            scroll->setWidgetResizable(true);
+            scroll->setFrameShape(QFrame::NoFrame);
+            m_dashboard = new ui::DashboardWidget(scroll);
+            scroll->setWidget(m_dashboard);
+            dock->setWidget(scroll);
             m_kernelApis = new ui::KernelApiWidget(m_dashboard);
             m_dashboard->insertTab(2, m_kernelApis, tr("Kernel APIs"));
         } else if (dock->objectName() == QLatin1String("dock_functions")) {
@@ -262,8 +312,22 @@ void MainWindow::buildDockLayout() {
         }
     }
 
+    // Swaps a dock's "not built yet" placeholder for its view.
+    const auto install = [](QDockWidget* dock, QWidget* view) {
+        delete dock->widget();
+        view->setParent(dock);
+        dock->setWidget(view);
+    };
+
     for (const auto& spec : kDatabaseDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        if (dock->objectName() == QLatin1String("dock_analysis_history")) {
+            install(dock, m_history = new ui::HistoryWidget);
+        } else if (dock->objectName() == QLatin1String("dock_compare_drivers")) {
+            install(dock, m_compare = new ui::CompareWidget);
+        } else if (dock->objectName() == QLatin1String("dock_previous_findings")) {
+            install(dock, m_previousFindings = new ui::PreviousFindingsWidget);
+        }
         addDockWidget(Qt::BottomDockWidgetArea, dock);
         tabifyDockWidget(firstBottom, dock);
     }
@@ -272,9 +336,30 @@ void MainWindow::buildDockLayout() {
     // narrow right column keeps only the research views.
     for (const auto& spec : kReportDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        if (dock->objectName() == QLatin1String("dock_export")) {
+            install(dock, m_export = new ui::ExportWidget);
+        }
         addDockWidget(Qt::BottomDockWidgetArea, dock);
         tabifyDockWidget(firstBottom, dock);
     }
+
+    connect(m_history, &ui::HistoryWidget::openDriverRequested, this, [this](const QString& path) {
+        if (!QFileInfo::exists(path)) {
+            statusBar()->showMessage(tr("%1 is no longer at that path.").arg(path), 6000);
+            return;
+        }
+        loadDriver(path);
+    });
+    connect(m_history, &ui::HistoryWidget::compareRequested, this, [this](qint64 a, qint64 b) {
+        m_compare->compare(a, b);
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_compare_drivers"))) {
+            dock->raise();
+        }
+    });
+    connect(m_history, &ui::HistoryWidget::historyChanged, this, [this] { m_compare->refresh(); });
+    connect(m_export, &ui::ExportWidget::exported, this, [this](const QString& path) {
+        statusBar()->showMessage(tr("Exported %1").arg(QDir::toNativeSeparators(path)), 6000);
+    });
 
     // Tabifying makes the most recently added dock current; open each group
     // on its first tab instead.
@@ -306,6 +391,11 @@ void MainWindow::buildStatusBar() {
 }
 
 void MainWindow::restoreLayout() {
+    // Geometry saved under an older layout can be one where the window
+    // overflowed the screen, so only restore it alongside a current layout.
+    if (m_settings.value("mainWindow/layoutVersion").toInt() != kLayoutVersion) {
+        return;
+    }
     if (m_settings.contains("mainWindow/geometry")) {
         restoreGeometry(m_settings.value("mainWindow/geometry").toByteArray());
     }
@@ -319,6 +409,7 @@ void MainWindow::restoreLayout() {
 void MainWindow::saveLayout() {
     m_settings.setValue("mainWindow/geometry", saveGeometry());
     m_settings.setValue("mainWindow/state", saveState(kLayoutVersion));
+    m_settings.setValue("mainWindow/layoutVersion", kLayoutVersion);
 }
 
 bool MainWindow::event(QEvent* event) {
@@ -391,6 +482,8 @@ void MainWindow::loadDriver(const QString& path) {
     m_kernelApis->clear();
     m_findings->clear();
     m_evidence->clear();
+    m_previousFindings->clear();
+    m_export->clear();
     m_dashboard->setRiskSummary(QString());
     if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
         dock->show();
@@ -403,7 +496,10 @@ void MainWindow::loadDriver(const QString& path) {
     const quint64 generation = ++m_loadGeneration;
     const std::filesystem::path fsPath = nativePath.toStdWString();
     QPointer<MainWindow> self(this);
-    QThreadPool::globalInstance()->start([self, generation, fsPath, nativePath]() {
+    // The worker also saves the analysis, over its own database connection.
+    const std::filesystem::path dbPath = m_db ? std::filesystem::path(m_dbPath.toStdWString())
+                                              : std::filesystem::path();
+    QThreadPool::globalInstance()->start([self, generation, fsPath, nativePath, dbPath]() {
         std::shared_ptr<const analysis::AnalysisResult> result;
         QString error;
         try {
@@ -412,11 +508,22 @@ void MainWindow::loadDriver(const QString& path) {
             error = QString::fromStdString(ex.what());
             spdlog::warn("Analysis failed for {}: {}", nativePath.toStdString(), ex.what());
         }
+        qint64 storedId = 0;
+        QString storeError;
+        if (result && !dbPath.empty()) {
+            try {
+                core::database::AnalysisDatabase db(dbPath);
+                storedId = analysis::saveAnalysis(db, *result);
+            } catch (const std::exception& ex) {
+                storeError = QString::fromStdString(ex.what());
+                spdlog::warn("Could not save the analysis of {}: {}", nativePath.toStdString(), ex.what());
+            }
+        }
         QMetaObject::invokeMethod(
             qApp,
-            [self, generation, nativePath, result, error]() {
+            [self, generation, nativePath, result, error, storedId, storeError]() {
                 if (self && generation == self->m_loadGeneration) {
-                    self->onAnalysisFinished(nativePath, result, error);
+                    self->onAnalysisFinished(nativePath, result, error, storedId, storeError);
                 }
             },
             Qt::QueuedConnection);
@@ -425,7 +532,7 @@ void MainWindow::loadDriver(const QString& path) {
 
 void MainWindow::onAnalysisFinished(const QString& path,
                                     const std::shared_ptr<const analysis::AnalysisResult>& result,
-                                    const QString& error) {
+                                    const QString& error, qint64 storedId, const QString& storeError) {
     const QString name = QFileInfo(path).fileName();
     if (!result) {
         m_dashboard->showError(path, error);
@@ -442,6 +549,11 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_kernelApis->setResult(result);
     m_evidence->setResult(result);
     m_findings->setResult(result); // selects the first finding, which fills Evidence
+    m_export->setResult(result);
+    m_history->refresh();
+    m_compare->refresh();
+    m_previousFindings->showFor(storedId, QString::fromStdString(image.hashes.sha256),
+                                QString::fromStdString(image.fileName));
     const auto& risk = result->findings->risk;
     m_dashboard->setRiskSummary(
         tr("<span style='font-size:12pt; color:%1'><b>%2/100 &middot; %3 risk</b></span>"
@@ -460,6 +572,11 @@ void MainWindow::onAnalysisFinished(const QString& path,
                                  .arg(result->findings->risk.score)
                                  .arg(QString::fromStdString(result->findings->risk.level)),
                              8000);
+    if (!storeError.isEmpty()) {
+        statusBar()->showMessage(tr("%1 analyzed, but it couldn't be saved to the database: %2")
+                                     .arg(name, storeError),
+                                 10000);
+    }
 }
 
 } // namespace dasa::app

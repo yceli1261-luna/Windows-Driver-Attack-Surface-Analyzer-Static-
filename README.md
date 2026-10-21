@@ -104,6 +104,21 @@ findings listed. Shown in the Findings and Evidence docks and on the
 Dashboard. Reachability is over the call graph, not data flow, and the
 findings say so.
 
+**Phase 8 — analysis database and reports (done).** Every analysis is
+saved to a SQLite database (`core/database/AnalysisDatabase`) at
+`%LOCALAPPDATA%\DASA Project\DASA\dasa.db`: a summary row, the findings,
+IOCTLs and notable kernel APIs as rows, and the full JSON report.
+`analysis/report/ReportWriter` writes the JSON report (schema
+`dasa-report/1`, addresses and codes as hex strings) and a self-contained
+HTML report (inline CSS, no scripts, all driver-derived text escaped). New
+views: Analysis History (all stored analyses; reopen, compare two, export
+a stored report, delete), Previous Findings (what changed since an earlier
+analysis of the same file, matched by SHA-256 or file name), Compare
+Drivers (any two analyses: findings matched on rule and title, IOCTLs on
+code, APIs on name, plus the risk delta) and Export (HTML / JSON; also
+File > Export, Ctrl+E / Ctrl+Shift+E). Re-analyzing a file adds a new
+entry rather than replacing the old one.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -177,6 +192,12 @@ link step fails with LNK1168 (file in use).
   fixture's MmMapIoSpace chain `\DosDevices\DasaWdm` →
   IRP_MJ_DEVICE_CONTROL → IOCTL 0x0022E00B → sub_1300 → call at 0x1320)
   and the risk-score weights.
+
+- The analysis database on a temporary file (round trip of hand-written
+  analyses, history matching, delete cascading to child rows checked with
+  SQLite directly, comparison) and the reports for `DASAWdmSample.sys`
+  (the JSON's codes, device, link and MmMapIoSpace reachability match the
+  generator; the HTML is escaped and script-free).
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file
