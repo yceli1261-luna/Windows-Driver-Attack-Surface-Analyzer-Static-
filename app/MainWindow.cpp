@@ -25,6 +25,8 @@
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/graph_view/CallGraphWidget.h"
+#include "ui/graph_view/ControlFlowWidget.h"
 #include "ui/database_view/CompareWidget.h"
 #include "ui/database_view/HistoryWidget.h"
 #include "ui/driver_view/DevicesWidget.h"
@@ -263,6 +265,14 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_findings = new ui::FindingsWidget(dock);
             dock->setWidget(m_findings);
+        } else if (dock->objectName() == QLatin1String("dock_call_graph")) {
+            delete dock->widget();
+            m_callGraph = new ui::CallGraphWidget(dock);
+            dock->setWidget(m_callGraph);
+        } else if (dock->objectName() == QLatin1String("dock_control_flow")) {
+            delete dock->widget();
+            m_controlFlow = new ui::ControlFlowWidget(dock);
+            dock->setWidget(m_controlFlow);
         } else if (dock->objectName() == QLatin1String("dock_evidence")) {
             delete dock->widget();
             m_evidence = new ui::EvidenceWidget(dock);
@@ -289,6 +299,24 @@ void MainWindow::buildDockLayout() {
     connect(m_kernelApis, &ui::KernelApiWidget::functionActivated, this, openFunction);
     connect(m_evidence, &ui::EvidenceWidget::functionActivated, this, openFunction);
     connect(m_findings, &ui::FindingsWidget::findingSelected, m_evidence, &ui::EvidenceWidget::showFinding);
+
+    // Control Flow follows the function selected in Functions. Choosing a
+    // function in Call Graph or Control Flow selects it in Functions (which
+    // moves Control Flow too) without switching tabs.
+    connect(m_functions, &ui::FunctionsWidget::functionSelected, m_controlFlow,
+            &ui::ControlFlowWidget::showFunction);
+    connect(m_callGraph, &ui::CallGraphWidget::functionActivated, m_functions, &ui::FunctionsWidget::showFunction);
+    connect(m_controlFlow, &ui::ControlFlowWidget::functionActivated, this, [this](std::uint64_t rva) {
+        m_controlFlow->showFunction(rva);
+        m_functions->showFunction(rva);
+        m_callGraph->focusFunction(rva);
+    });
+    connect(m_callGraph, &ui::CallGraphWidget::controlFlowRequested, this, [this](std::uint64_t rva) {
+        m_controlFlow->showFunction(rva);
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_control_flow"))) {
+            dock->raise();
+        }
+    });
 
     QDockWidget* firstRight = nullptr;
     for (const auto& spec : kResearchDocks) {
@@ -482,6 +510,8 @@ void MainWindow::loadDriver(const QString& path) {
     m_kernelApis->clear();
     m_findings->clear();
     m_evidence->clear();
+    m_callGraph->clear();
+    m_controlFlow->clear();
     m_previousFindings->clear();
     m_export->clear();
     m_dashboard->setRiskSummary(QString());
@@ -550,6 +580,8 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_evidence->setResult(result);
     m_findings->setResult(result); // selects the first finding, which fills Evidence
     m_export->setResult(result);
+    m_callGraph->setResult(result);
+    m_controlFlow->setResult(result);
     m_history->refresh();
     m_compare->refresh();
     m_previousFindings->showFor(storedId, QString::fromStdString(image.hashes.sha256),

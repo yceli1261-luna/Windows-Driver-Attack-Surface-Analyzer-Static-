@@ -8,6 +8,7 @@ add_executable(dasa_core_tests
     KernelApiTest.cpp
     FindingsTest.cpp
     DatabaseReportTest.cpp
+    GraphTest.cpp
 )
 
 target_link_libraries(dasa_core_tests

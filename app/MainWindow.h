@@ -20,7 +20,9 @@ class AnalysisDatabase;
 }
 
 namespace dasa::ui {
+class CallGraphWidget;
 class CompareWidget;
+class ControlFlowWidget;
 class DashboardWidget;
 class ExportWidget;
 class HistoryWidget;
@@ -46,7 +48,8 @@ namespace dasa::app {
 /// Dashboard's Kernel APIs tab (Phase 6). Each analysis is also saved to
 /// the analysis database (Analysis History, Previous Findings, Compare
 /// Drivers) and can be exported (Export) (Phase 8). Other docks stay empty
-/// until the phase that implements their view.
+/// until the phase that implements their view. Call Graph and Control
+/// Flow draw the call neighbourhood and basic blocks (Phase 9).
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -88,6 +91,8 @@ private:
     ui::KernelApiWidget* m_kernelApis = nullptr;
     ui::FindingsWidget* m_findings = nullptr;
     ui::EvidenceWidget* m_evidence = nullptr;
+    ui::CallGraphWidget* m_callGraph = nullptr;
+    ui::ControlFlowWidget* m_controlFlow = nullptr;
     ui::HistoryWidget* m_history = nullptr;
     ui::PreviousFindingsWidget* m_previousFindings = nullptr;
     ui::CompareWidget* m_compare = nullptr;

@@ -279,6 +279,7 @@ void FunctionsWidget::onCurrentRowChanged() {
     const QModelIndex source = m_proxy->mapToSource(m_table->currentIndex());
     if (source.isValid()) {
         renderListing(static_cast<std::size_t>(source.row()));
+        emit functionSelected(m_result->functions->functions[static_cast<std::size_t>(source.row())].rva);
     }
 }
 

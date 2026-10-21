@@ -119,6 +119,24 @@ code, APIs on name, plus the risk delta) and Export (HTML / JSON; also
 File > Export, Ctrl+E / Ctrl+Shift+E). Re-analyzing a file adds a new
 entry rather than replacing the old one.
 
+**Phase 9 — call graph and control flow (done).** `core/cfg/GraphLayout`
+is a layered graph layout (back edges reversed, longest-path layers,
+barycenter crossing reduction, edges routed through every layer they
+cross, loops routed up the right side). `core/cfg/ControlFlowGraph`
+classifies each block edge as taken / not taken / jump and each exit as
+return, trap, tail call, call that doesn't return, or an indirect jump
+whose targets weren't followed. `core/callgraph/CallGraph` holds the
+direct calls between functions and to imports (with call-site counts and
+tail calls), marks entry-point roles (DriverEntry, IRP handlers, KMDF
+callbacks) and call cycles, and extracts a function's neighbourhood
+(callers / callees to a depth, imports of the focused function or of
+everything shown). The Control Flow view draws a function's blocks with
+annotated calls and follows the selection in Functions; the Call Graph
+view shows the neighbourhood with risky imports coloured, and
+double-clicking navigates both. Functions over 700 blocks aren't drawn.
+Calls through pointers (callbacks, the WDF function table) aren't call
+graph edges.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -198,6 +216,14 @@ link step fails with LNK1168 (file in use).
   SQLite directly, comparison) and the reports for `DASAWdmSample.sys`
   (the JSON's codes, device, link and MmMapIoSpace reachability match the
   generator; the HTML is escaped and script-free).
+
+- Graph layout on small hand-built graphs (layers, no overlaps, edge
+  endpoints, back edges and self loops, long edges bending through each
+  layer), control-flow graphs of the WDM fixture's helper and
+  IRP_MJ_DEVICE_CONTROL routine (blocks, taken/not-taken edges, the
+  unresolved switch jump), and its call graph (DeviceControl → helper →
+  MmMapIoSpace, three RtlInitUnicodeString call sites, entry-point roles,
+  neighbourhoods, recursion on a hand-built cycle).
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

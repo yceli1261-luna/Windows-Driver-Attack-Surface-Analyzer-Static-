@@ -36,6 +36,10 @@ public:
     /// Selects and shows the function starting at `rva`, if there is one.
     void showFunction(std::uint64_t rva);
 
+signals:
+    /// The selected function changed (user selection or showFunction()).
+    void functionSelected(std::uint64_t rva);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 

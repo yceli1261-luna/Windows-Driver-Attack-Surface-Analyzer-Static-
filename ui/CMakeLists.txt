@@ -3,7 +3,7 @@
 # analysis results and never run analysis themselves. Phase 2 adds
 # dashboard/, Phase 3 function_view/, Phase 4 driver_view/, Phase 5
 # ioctl_view/ and driver_view/DevicesWidget, Phase 6 security_view/, Phase 7 findings_view/,
-# Phase 8 database_view/ and report_view/.
+# Phase 8 database_view/ and report_view/, Phase 9 graph_view/.
 
 add_library(dasa_ui STATIC
     dashboard/DashboardWidget.h
@@ -31,6 +31,14 @@ add_library(dasa_ui STATIC
     database_view/CompareWidget.cpp
     report_view/ExportWidget.h
     report_view/ExportWidget.cpp
+    graph_view/GraphView.h
+    graph_view/GraphView.cpp
+    graph_view/GraphUtil.h
+    graph_view/GraphUtil.cpp
+    graph_view/ControlFlowWidget.h
+    graph_view/ControlFlowWidget.cpp
+    graph_view/CallGraphWidget.h
+    graph_view/CallGraphWidget.cpp
 )
 
 target_include_directories(dasa_ui
