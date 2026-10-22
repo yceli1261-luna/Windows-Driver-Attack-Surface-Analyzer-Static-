@@ -16,6 +16,10 @@ add_library(dasa_analysis STATIC
     report/ReportWriter.cpp
     search/Search.h
     search/Search.cpp
+    diff/AnalysisDiff.h
+    diff/AnalysisDiff.cpp
+    report/Assessment.h
+    report/Assessment.cpp
 )
 
 target_link_libraries(dasa_analysis

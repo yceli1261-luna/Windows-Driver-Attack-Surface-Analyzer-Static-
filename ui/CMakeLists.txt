@@ -4,7 +4,8 @@
 # dashboard/, Phase 3 function_view/, Phase 4 driver_view/, Phase 5
 # ioctl_view/ and driver_view/DevicesWidget, Phase 6 security_view/, Phase 7 findings_view/,
 # Phase 8 database_view/ and report_view/, Phase 9 graph_view/, Phase 10
-# dataflow_view/, Phase 11 research_view/.
+# dataflow_view/, Phase 11 research_view/, Phase 12 report_view/Phase12Widgets
+# (Drivers, Current Analysis, Diff, Security Assessment).
 
 add_library(dasa_ui STATIC
     dashboard/DashboardWidget.h
@@ -44,6 +45,8 @@ add_library(dasa_ui STATIC
     dataflow_view/DataFlowWidget.cpp
     research_view/ResearchWidgets.h
     research_view/ResearchWidgets.cpp
+    report_view/Phase12Widgets.h
+    report_view/Phase12Widgets.cpp
 )
 
 target_include_directories(dasa_ui
@@ -57,5 +60,10 @@ target_link_libraries(dasa_ui
         dasa_core
         dasa_analysis
 )
+
+if(WIN32)
+    # Drivers view: file version info and the loaded-driver list.
+    target_link_libraries(dasa_ui PRIVATE version psapi)
+endif()
 
 target_compile_features(dasa_ui PUBLIC cxx_std_20)

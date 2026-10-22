@@ -26,6 +26,7 @@
 #include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
 #include "ui/dataflow_view/DataFlowWidget.h"
+#include "ui/report_view/Phase12Widgets.h"
 #include "ui/research_view/ResearchWidgets.h"
 #include "ui/graph_view/CallGraphWidget.h"
 #include "ui/graph_view/ControlFlowWidget.h"
@@ -153,6 +154,7 @@ void MainWindow::openDatabase() {
         spdlog::warn("Could not open the analysis database {}: {}", m_dbPath.toStdString(), ex.what());
     }
     m_history->setDatabase(m_db, m_dbPath, error);
+    m_drivers->setDatabase(m_db);
     m_bookmarks->setDatabase(m_db);
     m_notes->setDatabase(m_db);
     m_tags->setDatabase(m_db);
@@ -289,6 +291,18 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_controlFlow = new ui::ControlFlowWidget(dock);
             dock->setWidget(m_controlFlow);
+        } else if (dock->objectName() == QLatin1String("dock_drivers")) {
+            delete dock->widget();
+            m_drivers = new ui::DriversWidget(dock);
+            dock->setWidget(m_drivers);
+        } else if (dock->objectName() == QLatin1String("dock_current_analysis")) {
+            delete dock->widget();
+            m_currentAnalysis = new ui::CurrentAnalysisWidget(dock);
+            dock->setWidget(m_currentAnalysis);
+        } else if (dock->objectName() == QLatin1String("dock_diff")) {
+            delete dock->widget();
+            m_diff = new ui::DiffWidget(dock);
+            dock->setWidget(m_diff);
         } else if (dock->objectName() == QLatin1String("dock_data_flow")) {
             delete dock->widget();
             m_dataFlow = new ui::DataFlowWidget(dock);
@@ -371,6 +385,13 @@ void MainWindow::buildDockLayout() {
     QDockWidget* firstBottom = nullptr;
     for (const auto& spec : kDynamicDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        if (auto* label = qobject_cast<QLabel*>(dock->widget())) {
+            label->setText(tr("<p style='font-size:11pt; color:#c8c8c8'>%1</p>"
+                              "<p style='color:#8a8a8a'>Dynamic analysis loads the driver into a running kernel, so it "
+                              "needs a disposable test VM (test signing, kernel debugging, snapshots). It is not part "
+                              "of this build - everything else in DASA is static and safe to run on this PC.</p>")
+                               .arg(tr(spec.title).toHtmlEscaped()));
+        }
         addDockWidget(Qt::BottomDockWidgetArea, dock);
         if (firstBottom) {
             tabifyDockWidget(firstBottom, dock);
@@ -405,6 +426,8 @@ void MainWindow::buildDockLayout() {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
         if (dock->objectName() == QLatin1String("dock_export")) {
             install(dock, m_export = new ui::ExportWidget);
+        } else if (dock->objectName() == QLatin1String("dock_security_assessment")) {
+            install(dock, m_assessment = new ui::AssessmentWidget);
         }
         addDockWidget(Qt::BottomDockWidgetArea, dock);
         tabifyDockWidget(firstBottom, dock);
@@ -419,6 +442,8 @@ void MainWindow::buildDockLayout() {
     };
     connect(m_history, &ui::HistoryWidget::openDriverRequested, this, openStored);
     connect(m_tags, &ui::TagsWidget::openDriverRequested, this, openStored);
+    connect(m_drivers, &ui::DriversWidget::openDriverRequested, this, openStored);
+    connect(m_assessment, &ui::AssessmentWidget::exportRequested, this, [this] { m_export->exportHtml(); });
     connect(m_workspace, &ui::WorkspaceWidget::openDriverRequested, this, openStored);
     // Research: navigation and keeping the workspace current.
     const auto openFunctionHere = [this](std::uint64_t rva) {
@@ -428,6 +453,8 @@ void MainWindow::buildDockLayout() {
         }
     };
     connect(m_search, &ui::SearchWidget::functionActivated, this, openFunctionHere);
+    connect(m_assessment, &ui::AssessmentWidget::functionActivated, this, openFunctionHere);
+    connect(m_diff, &ui::DiffWidget::functionActivated, this, openFunctionHere);
     connect(m_bookmarks, &ui::BookmarksWidget::functionActivated, this, openFunctionHere);
     connect(m_search, &ui::SearchWidget::bookmarkRequested, this, [this](std::uint64_t rva, const QString& label) {
         m_bookmarks->addBookmark(rva, label);
@@ -574,6 +601,9 @@ void MainWindow::loadDriver(const QString& path) {
     m_evidence->clear();
     m_callGraph->clear();
     m_dataFlow->clear();
+    m_assessment->clear();
+    m_diff->clear();
+    m_currentAnalysis->showLoading(nativePath);
     m_search->clear();
     m_bookmarks->clear();
     m_notes->clear();
@@ -633,6 +663,7 @@ void MainWindow::onAnalysisFinished(const QString& path,
     const QString name = QFileInfo(path).fileName();
     if (!result) {
         m_dashboard->showError(path, error);
+        m_currentAnalysis->clear();
         m_statusDriverLabel->setText(tr("Failed to analyze %1").arg(name));
         statusBar()->showMessage(tr("Could not analyze %1: %2").arg(name, error), 8000);
         return;
@@ -649,6 +680,9 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_export->setResult(result);
     m_callGraph->setResult(result);
     m_dataFlow->setResult(result);
+    m_assessment->setResult(result);
+    m_diff->setResult(result);
+    m_currentAnalysis->setResult(result, storedId);
     m_search->setResult(result);
     m_bookmarks->setResult(result);
     m_notes->setDriver(image.hashes.sha256, name);

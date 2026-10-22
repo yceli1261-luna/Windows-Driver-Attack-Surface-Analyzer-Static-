@@ -24,6 +24,10 @@ class CallGraphWidget;
 class CompareWidget;
 class ControlFlowWidget;
 class DataFlowWidget;
+class AssessmentWidget;
+class CurrentAnalysisWidget;
+class DiffWidget;
+class DriversWidget;
 class BookmarksWidget;
 class NotesWidget;
 class SearchWidget;
@@ -58,7 +62,9 @@ namespace dasa::app {
 /// Flow draw the call neighbourhood and basic blocks (Phase 9); Data Flow
 /// lists request data reaching sensitive operations (Phase 10). The
 /// research column holds Search, Bookmarks, Notes, Tags and the
-/// Investigation Workspace (Phase 11).
+/// Investigation Workspace (Phase 11). Drivers, Current Analysis, Diff and
+/// Security Assessment complete the static views (Phase 12); the DYNAMIC
+/// group needs a test VM and is not part of this build.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -103,6 +109,10 @@ private:
     ui::CallGraphWidget* m_callGraph = nullptr;
     ui::ControlFlowWidget* m_controlFlow = nullptr;
     ui::DataFlowWidget* m_dataFlow = nullptr;
+    ui::AssessmentWidget* m_assessment = nullptr;
+    ui::CurrentAnalysisWidget* m_currentAnalysis = nullptr;
+    ui::DiffWidget* m_diff = nullptr;
+    ui::DriversWidget* m_drivers = nullptr;
     ui::SearchWidget* m_search = nullptr;
     ui::BookmarksWidget* m_bookmarks = nullptr;
     ui::NotesWidget* m_notes = nullptr;

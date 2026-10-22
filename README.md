@@ -173,8 +173,24 @@ lists all drivers you have annotated with their latest risk. Bookmarks,
 notes and tags are stored in the analysis database per file SHA-256, so
 they follow the exact file across re-analysis and renamed copies.
 
-The other docks are still empty; each is filled by the phase that
-implements its view.
+**Phase 12 — remaining static views (done).** Drivers lists the drivers
+loaded right now (from the Service Control Manager and the kernel module
+list), in System32\drivers or in any folder, with company, description and
+version, third-party only by default, marking ones already analysed;
+double-click analyses one. Current Analysis shows what each stage produced
+and the limits that applied. Diff compares the loaded driver with another
+file (`analysis/diff/AnalysisDiff`): functions matched by an
+address-independent instruction fingerprint, then name, then called
+imports and size, reported as changed / added / removed / identical
+(changed functions that call risky APIs first - where a security fix
+usually is), plus import, export, section, IOCTL, device and finding
+deltas. Security Assessment (`analysis/report/Assessment`) writes a
+plain-language verdict, how user mode reaches the driver, the top risks,
+protections present and missing, next steps and coverage limits.
+
+The DYNAMIC group (VM, Driver Verifier, WinDbg, Runtime Events, Crash
+Analysis) needs a disposable test VM and is not part of this build; those
+tabs say so.
 
 ## Prerequisites (Windows)
 
@@ -274,6 +290,11 @@ link step fails with LNK1168 (file in use).
   generator placed them, the functions that load them, imports, `wrmsr`,
   IOCTLs, regex, case and limit handling) and bookmarks / notes / tags in
   a temporary database.
+
+- Diff of the WDM and taint fixtures (import, device and IOCTL deltas from
+  the two generators; CreateClose matched across addresses by its
+  fingerprint; a file against itself is all identical) and the security
+  assessment of both fixtures.
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file
