@@ -10,6 +10,7 @@ add_executable(dasa_core_tests
     DatabaseReportTest.cpp
     GraphTest.cpp
     DataFlowTest.cpp
+    ResearchTest.cpp
 )
 
 target_link_libraries(dasa_core_tests

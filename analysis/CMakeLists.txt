@@ -4,7 +4,8 @@
 #
 # static/StaticAnalysisPipeline is the one entry point the app calls; each
 # phase adds its stage there. heuristics/ holds the finding rules (Phase
-# 7); report/ the JSON/HTML reports and database save (Phase 8); ghidra/ and signatures/ are populated by later phases.
+# 7); report/ the JSON/HTML reports and database save (Phase 8); search/
+# (Phase 11); ghidra/ and signatures/ are populated by later phases.
 
 add_library(dasa_analysis STATIC
     static/StaticAnalysisPipeline.h
@@ -13,6 +14,8 @@ add_library(dasa_analysis STATIC
     heuristics/FindingRules.cpp
     report/ReportWriter.h
     report/ReportWriter.cpp
+    search/Search.h
+    search/Search.cpp
 )
 
 target_link_libraries(dasa_analysis

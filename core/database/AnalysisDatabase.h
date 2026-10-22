@@ -70,6 +70,32 @@ struct Comparison {
 
 Comparison compare(const StoredAnalysis& a, const StoredAnalysis& b);
 
+/// A saved location in a driver (keyed by the file's SHA-256, so it
+/// survives re-analysis and renamed copies).
+struct Bookmark {
+    std::int64_t id = 0;
+    std::string sha256;
+    std::uint64_t rva = 0;
+    std::string label;
+    std::string note;
+    std::string createdAt; // UTC "YYYY-MM-DD HH:MM:SS"
+};
+
+struct TagCount {
+    std::string tag;
+    int drivers = 0;
+};
+
+/// A driver with any bookmarks, notes or tags, with its latest analysis.
+struct AnnotatedDriver {
+    AnalysisSummary latest; // id 0 when the file was never stored as an analysis
+    std::string sha256;
+    std::vector<std::string> tags;
+    int bookmarks = 0;
+    bool hasNotes = false;
+    std::string notesUpdatedAt;
+};
+
 /// SQLite store of past analyses: a summary row, the findings, IOCTLs and
 /// notable APIs as rows for listing/comparison, and the full JSON report.
 /// One connection per instance; use from one thread at a time.
@@ -92,6 +118,26 @@ public:
     std::optional<StoredAnalysis> load(std::int64_t id);
     std::optional<std::string> reportJson(std::int64_t id);
     void remove(std::int64_t id);
+
+    // ---- research annotations (per file SHA-256) -------------------------
+    std::vector<Bookmark> bookmarks(const std::string& sha256);
+    std::int64_t addBookmark(const std::string& sha256, std::uint64_t rva, const std::string& label,
+                             const std::string& note);
+    void updateBookmark(std::int64_t id, const std::string& label, const std::string& note);
+    void removeBookmark(std::int64_t id);
+
+    std::string notes(const std::string& sha256);
+    /// Empty text deletes the notes.
+    void setNotes(const std::string& sha256, const std::string& text);
+
+    std::vector<std::string> tags(const std::string& sha256); // sorted
+    /// Tags are trimmed and lower-cased; empty tags are ignored.
+    void addTag(const std::string& sha256, const std::string& tag);
+    void removeTag(const std::string& sha256, const std::string& tag);
+    std::vector<TagCount> allTags(); // most used first
+    std::vector<std::string> driversWithTag(const std::string& tag); // SHA-256s
+
+    std::vector<AnnotatedDriver> annotatedDrivers(); // most recently annotated first
 
 private:
     struct Impl;

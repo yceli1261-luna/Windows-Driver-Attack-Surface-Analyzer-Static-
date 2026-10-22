@@ -26,6 +26,7 @@
 #include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
 #include "ui/dataflow_view/DataFlowWidget.h"
+#include "ui/research_view/ResearchWidgets.h"
 #include "ui/graph_view/CallGraphWidget.h"
 #include "ui/graph_view/ControlFlowWidget.h"
 #include "ui/database_view/CompareWidget.h"
@@ -152,6 +153,10 @@ void MainWindow::openDatabase() {
         spdlog::warn("Could not open the analysis database {}: {}", m_dbPath.toStdString(), ex.what());
     }
     m_history->setDatabase(m_db, m_dbPath, error);
+    m_bookmarks->setDatabase(m_db);
+    m_notes->setDatabase(m_db);
+    m_tags->setDatabase(m_db);
+    m_workspace->setDatabase(m_db);
     m_compare->setDatabase(m_db);
     m_previousFindings->setDatabase(m_db);
 }
@@ -193,6 +198,16 @@ void MainWindow::buildMenus() {
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
+    QAction* findAction = viewMenu->addAction(tr("&Search..."));
+    findAction->setShortcut(QKeySequence::Find);
+    connect(findAction, &QAction::triggered, this, [this] {
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_search"))) {
+            dock->show();
+            dock->raise();
+        }
+        m_search->focusQuery();
+    });
+    viewMenu->addSeparator();
     viewMenu->addAction(tr("Reset Layout"), this, [this]() {
         m_settings.remove("mainWindow/geometry");
         m_settings.remove("mainWindow/state");
@@ -327,6 +342,24 @@ void MainWindow::buildDockLayout() {
     QDockWidget* firstRight = nullptr;
     for (const auto& spec : kResearchDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        QWidget* view = nullptr;
+        const QString name = dock->objectName();
+        if (name == QLatin1String("dock_search")) {
+            view = m_search = new ui::SearchWidget;
+        } else if (name == QLatin1String("dock_bookmarks")) {
+            view = m_bookmarks = new ui::BookmarksWidget;
+        } else if (name == QLatin1String("dock_notes")) {
+            view = m_notes = new ui::NotesWidget;
+        } else if (name == QLatin1String("dock_tags")) {
+            view = m_tags = new ui::TagsWidget;
+        } else if (name == QLatin1String("dock_investigation_workspace")) {
+            view = m_workspace = new ui::WorkspaceWidget;
+        }
+        if (view) {
+            delete dock->widget();
+            view->setParent(dock);
+            dock->setWidget(view);
+        }
         addDockWidget(Qt::RightDockWidgetArea, dock);
         if (firstRight) {
             tabifyDockWidget(firstRight, dock);
@@ -377,13 +410,35 @@ void MainWindow::buildDockLayout() {
         tabifyDockWidget(firstBottom, dock);
     }
 
-    connect(m_history, &ui::HistoryWidget::openDriverRequested, this, [this](const QString& path) {
+    const auto openStored = [this](const QString& path) {
         if (!QFileInfo::exists(path)) {
             statusBar()->showMessage(tr("%1 is no longer at that path.").arg(path), 6000);
             return;
         }
         loadDriver(path);
+    };
+    connect(m_history, &ui::HistoryWidget::openDriverRequested, this, openStored);
+    connect(m_tags, &ui::TagsWidget::openDriverRequested, this, openStored);
+    connect(m_workspace, &ui::WorkspaceWidget::openDriverRequested, this, openStored);
+    // Research: navigation and keeping the workspace current.
+    const auto openFunctionHere = [this](std::uint64_t rva) {
+        m_functions->showFunction(rva);
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_functions"))) {
+            dock->raise();
+        }
+    };
+    connect(m_search, &ui::SearchWidget::functionActivated, this, openFunctionHere);
+    connect(m_bookmarks, &ui::BookmarksWidget::functionActivated, this, openFunctionHere);
+    connect(m_search, &ui::SearchWidget::bookmarkRequested, this, [this](std::uint64_t rva, const QString& label) {
+        m_bookmarks->addBookmark(rva, label);
+        if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_bookmarks"))) {
+            dock->raise();
+        }
     });
+    connect(m_functions, &ui::FunctionsWidget::functionSelected, m_bookmarks, &ui::BookmarksWidget::setCurrentFunction);
+    connect(m_bookmarks, &ui::BookmarksWidget::changed, m_workspace, &ui::WorkspaceWidget::refresh);
+    connect(m_notes, &ui::NotesWidget::changed, m_workspace, &ui::WorkspaceWidget::refresh);
+    connect(m_tags, &ui::TagsWidget::changed, m_workspace, &ui::WorkspaceWidget::refresh);
     connect(m_history, &ui::HistoryWidget::compareRequested, this, [this](qint64 a, qint64 b) {
         m_compare->compare(a, b);
         if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_compare_drivers"))) {
@@ -461,6 +516,7 @@ bool MainWindow::event(QEvent* event) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    m_notes->flush();
     saveLayout();
     QMainWindow::closeEvent(event);
 }
@@ -518,6 +574,10 @@ void MainWindow::loadDriver(const QString& path) {
     m_evidence->clear();
     m_callGraph->clear();
     m_dataFlow->clear();
+    m_search->clear();
+    m_bookmarks->clear();
+    m_notes->clear();
+    m_tags->clear();
     m_controlFlow->clear();
     m_previousFindings->clear();
     m_export->clear();
@@ -589,6 +649,11 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_export->setResult(result);
     m_callGraph->setResult(result);
     m_dataFlow->setResult(result);
+    m_search->setResult(result);
+    m_bookmarks->setResult(result);
+    m_notes->setDriver(image.hashes.sha256, name);
+    m_tags->setDriver(image.hashes.sha256, name);
+    m_workspace->refresh();
     m_controlFlow->setResult(result);
     m_history->refresh();
     m_compare->refresh();

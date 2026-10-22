@@ -162,6 +162,17 @@ their flows lowered because they may accept such data only from kernel
 callers. On large Microsoft drivers the results are still noisy - it is
 tuned for small third-party drivers.
 
+**Phase 11 — research tools (done).** The research column now works:
+Search (Ctrl+F) looks through functions, imports, exports, strings
+(ASCII and UTF-16 in data sections, with the function that uses them),
+instructions, IOCTLs, devices and findings by substring or regular
+expression (`analysis/search/Search`); Bookmarks keep labelled, annotated
+addresses; Notes is a free-text notebook saved as you type; Tags label
+drivers and list every driver with a tag; and the Investigation Workspace
+lists all drivers you have annotated with their latest risk. Bookmarks,
+notes and tags are stored in the analysis database per file SHA-256, so
+they follow the exact file across re-analysis and renamed copies.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -258,6 +269,11 @@ link step fails with LNK1168 (file in use).
   reported - with the exact source of each value and the IOCTL whose case
   leads there; the resulting findings; and the WDM fixture's
   MmMapIoSpace call, whose constant arguments must not be a flow.
+
+- Search over the WDM fixture (its UTF-16 strings at the RVAs the
+  generator placed them, the functions that load them, imports, `wrmsr`,
+  IOCTLs, regex, case and limit handling) and bookmarks / notes / tags in
+  a temporary database.
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

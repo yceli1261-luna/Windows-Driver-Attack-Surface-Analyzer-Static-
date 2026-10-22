@@ -53,6 +53,26 @@ CREATE TABLE IF NOT EXISTS apis (
     reachable   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS apis_analysis ON apis(analysis_id);
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha256     TEXT NOT NULL,
+    rva        INTEGER NOT NULL,
+    label      TEXT NOT NULL,
+    note       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS bookmarks_sha ON bookmarks(sha256);
+CREATE TABLE IF NOT EXISTS notes (
+    sha256     TEXT PRIMARY KEY,
+    text       TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tags (
+    sha256     TEXT NOT NULL,
+    tag        TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (sha256, tag)
+);
 )sql";
 
 class Statement {
@@ -279,6 +299,166 @@ void AnalysisDatabase::remove(std::int64_t id) {
     Statement s(m_impl->db, "DELETE FROM analyses WHERE id = ?");
     s.bind(1, id);
     s.step();
+}
+
+// ------------------------------------------------- research annotations ----
+
+std::vector<Bookmark> AnalysisDatabase::bookmarks(const std::string& sha256) {
+    Statement s(m_impl->db,
+                "SELECT id, sha256, rva, label, note, created_at FROM bookmarks WHERE sha256 = ? ORDER BY rva, id");
+    s.bind(1, sha256);
+    std::vector<Bookmark> out;
+    while (s.step()) {
+        out.push_back({s.integer(0), s.text(1), static_cast<std::uint64_t>(s.integer(2)), s.text(3), s.text(4),
+                       s.text(5)});
+    }
+    return out;
+}
+
+std::int64_t AnalysisDatabase::addBookmark(const std::string& sha256, std::uint64_t rva, const std::string& label,
+                                           const std::string& note) {
+    Statement s(m_impl->db, "INSERT INTO bookmarks (sha256, rva, label, note) VALUES (?,?,?,?)");
+    s.bind(1, sha256).bind(2, static_cast<std::int64_t>(rva)).bind(3, label).bind(4, note);
+    s.step();
+    return sqlite3_last_insert_rowid(m_impl->db);
+}
+
+void AnalysisDatabase::updateBookmark(std::int64_t id, const std::string& label, const std::string& note) {
+    Statement s(m_impl->db, "UPDATE bookmarks SET label = ?, note = ? WHERE id = ?");
+    s.bind(1, label).bind(2, note).bind(3, id);
+    s.step();
+}
+
+void AnalysisDatabase::removeBookmark(std::int64_t id) {
+    Statement s(m_impl->db, "DELETE FROM bookmarks WHERE id = ?");
+    s.bind(1, id);
+    s.step();
+}
+
+std::string AnalysisDatabase::notes(const std::string& sha256) {
+    Statement s(m_impl->db, "SELECT text FROM notes WHERE sha256 = ?");
+    s.bind(1, sha256);
+    return s.step() ? s.text(0) : std::string();
+}
+
+void AnalysisDatabase::setNotes(const std::string& sha256, const std::string& text) {
+    if (text.empty()) {
+        Statement s(m_impl->db, "DELETE FROM notes WHERE sha256 = ?");
+        s.bind(1, sha256);
+        s.step();
+        return;
+    }
+    Statement s(m_impl->db,
+                "INSERT INTO notes (sha256, text) VALUES (?, ?) "
+                "ON CONFLICT(sha256) DO UPDATE SET text = excluded.text, updated_at = datetime('now')");
+    s.bind(1, sha256).bind(2, text);
+    s.step();
+}
+
+namespace {
+
+std::string normalizeTag(const std::string& tag) {
+    const auto first = tag.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const auto last = tag.find_last_not_of(" \t\r\n");
+    std::string t = tag.substr(first, last - first + 1);
+    for (char& c : t) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    return t;
+}
+
+} // namespace
+
+std::vector<std::string> AnalysisDatabase::tags(const std::string& sha256) {
+    Statement s(m_impl->db, "SELECT tag FROM tags WHERE sha256 = ? ORDER BY tag");
+    s.bind(1, sha256);
+    std::vector<std::string> out;
+    while (s.step()) {
+        out.push_back(s.text(0));
+    }
+    return out;
+}
+
+void AnalysisDatabase::addTag(const std::string& sha256, const std::string& tag) {
+    const std::string t = normalizeTag(tag);
+    if (t.empty()) {
+        return;
+    }
+    Statement s(m_impl->db, "INSERT OR IGNORE INTO tags (sha256, tag) VALUES (?, ?)");
+    s.bind(1, sha256).bind(2, t);
+    s.step();
+}
+
+void AnalysisDatabase::removeTag(const std::string& sha256, const std::string& tag) {
+    Statement s(m_impl->db, "DELETE FROM tags WHERE sha256 = ? AND tag = ?");
+    s.bind(1, sha256).bind(2, normalizeTag(tag));
+    s.step();
+}
+
+std::vector<TagCount> AnalysisDatabase::allTags() {
+    Statement s(m_impl->db, "SELECT tag, COUNT(*) FROM tags GROUP BY tag ORDER BY COUNT(*) DESC, tag");
+    std::vector<TagCount> out;
+    while (s.step()) {
+        out.push_back({s.text(0), static_cast<int>(s.integer(1))});
+    }
+    return out;
+}
+
+std::vector<std::string> AnalysisDatabase::driversWithTag(const std::string& tag) {
+    Statement s(m_impl->db, "SELECT sha256 FROM tags WHERE tag = ? ORDER BY created_at DESC");
+    s.bind(1, normalizeTag(tag));
+    std::vector<std::string> out;
+    while (s.step()) {
+        out.push_back(s.text(0));
+    }
+    return out;
+}
+
+std::vector<AnnotatedDriver> AnalysisDatabase::annotatedDrivers() {
+    // Every file with an annotation and when it was last touched.
+    Statement s(m_impl->db,
+                "SELECT sha256, MAX(t) FROM ("
+                "  SELECT sha256, created_at AS t FROM bookmarks"
+                "  UNION ALL SELECT sha256, updated_at FROM notes"
+                "  UNION ALL SELECT sha256, created_at FROM tags"
+                ") GROUP BY sha256 ORDER BY MAX(t) DESC");
+    std::vector<AnnotatedDriver> out;
+    while (s.step()) {
+        AnnotatedDriver d;
+        d.sha256 = s.text(0);
+        out.push_back(std::move(d));
+    }
+    for (auto& d : out) {
+        {
+            Statement q(m_impl->db, (std::string("SELECT ") + kSummaryColumns +
+                                     " FROM analyses WHERE sha256 = ? ORDER BY id DESC LIMIT 1").c_str());
+            q.bind(1, d.sha256);
+            if (q.step()) {
+                d.latest = readSummary(q);
+            }
+        }
+        d.tags = tags(d.sha256);
+        {
+            Statement q(m_impl->db, "SELECT COUNT(*) FROM bookmarks WHERE sha256 = ?");
+            q.bind(1, d.sha256);
+            q.step();
+            d.bookmarks = static_cast<int>(q.integer(0));
+        }
+        {
+            Statement q(m_impl->db, "SELECT updated_at FROM notes WHERE sha256 = ?");
+            q.bind(1, d.sha256);
+            if (q.step()) {
+                d.hasNotes = true;
+                d.notesUpdatedAt = q.text(0);
+            }
+        }
+    }
+    return out;
 }
 
 Comparison compare(const StoredAnalysis& a, const StoredAnalysis& b) {
