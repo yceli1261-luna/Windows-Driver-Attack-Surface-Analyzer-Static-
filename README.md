@@ -188,9 +188,9 @@ deltas. Security Assessment (`analysis/report/Assessment`) writes a
 plain-language verdict, how user mode reaches the driver, the top risks,
 protections present and missing, next steps and coverage limits.
 
-The DYNAMIC group (VM, Driver Verifier, WinDbg, Runtime Events, Crash
-Analysis) needs a disposable test VM and is not part of this build; those
-tabs say so.
+Dynamic analysis (loading the driver in a VM under Driver Verifier and
+WinDbg) is out of scope: DASA is a static analyzer, safe to run on the
+analyst's own machine.
 
 ## Prerequisites (Windows)
 

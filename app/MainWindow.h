@@ -48,9 +48,8 @@ class KernelApiWidget;
 
 namespace dasa::app {
 
-/// Top-level application window: the dock layout (one dock per
-/// workspace/research/dynamic/database/reports view from the product
-/// brief), persisted layout, dark theme, and driver loading via
+/// Top-level application window: the dock layout (workspace, research,
+/// reports and database views), persisted layout, dark theme, and driver loading via
 /// drag-and-drop, File > Open or --driver. Loading a driver runs the static
 /// analysis pipeline on a worker thread; the result fills the Dashboard
 /// (Phase 2), Functions (Phase 3), IRP Handlers (Phase 4), IOCTLs and
@@ -63,8 +62,8 @@ namespace dasa::app {
 /// lists request data reaching sensitive operations (Phase 10). The
 /// research column holds Search, Bookmarks, Notes, Tags and the
 /// Investigation Workspace (Phase 11). Drivers, Current Analysis, Diff and
-/// Security Assessment complete the static views (Phase 12); the DYNAMIC
-/// group needs a test VM and is not part of this build.
+/// Security Assessment complete the static views (Phase 12). Dynamic
+/// analysis (VM / Driver Verifier / WinDbg) is out of scope.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 

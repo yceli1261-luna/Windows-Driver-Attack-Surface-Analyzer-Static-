@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QStatusBar>
 #include <QTabBar>
@@ -23,6 +24,7 @@
 
 #include "analysis/report/ReportWriter.h"
 #include "analysis/static/StaticAnalysisPipeline.h"
+#include "core/Version.h"
 #include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
 #include "ui/dataflow_view/DataFlowWidget.h"
@@ -46,11 +48,9 @@ namespace dasa::app {
 
 namespace {
 
-// Dock titles mirror the brief's four nav groups (WORKSPACE / RESEARCH /
-// DYNAMIC / DATABASE) plus REPORTS. Views not built yet show a short
-// "not built yet" note; the phase that implements a view swaps in its
-// widget (ui/dashboard, ui/function_view, ... per the architecture
-// proposal).
+// Dock groups: WORKSPACE (left), RESEARCH (right column), and REPORTS plus
+// DATABASE (bottom strip). makeDock() creates each dock with a placeholder
+// that buildDockLayout() replaces with the view's widget.
 struct DockSpec {
     const char* title;
     const char* objectName;
@@ -78,14 +78,6 @@ constexpr DockSpec kResearchDocks[] = {
     {"Notes", "dock_notes"},
     {"Tags", "dock_tags"},
     {"Investigation Workspace", "dock_investigation_workspace"},
-};
-
-constexpr DockSpec kDynamicDocks[] = {
-    {"VM", "dock_vm"},
-    {"Driver Verifier", "dock_driver_verifier"},
-    {"WinDbg", "dock_windbg"},
-    {"Runtime Events", "dock_runtime_events"},
-    {"Crash Analysis", "dock_crash_analysis"},
 };
 
 constexpr DockSpec kDatabaseDocks[] = {
@@ -117,7 +109,7 @@ bool containsDriverUrl(const QMimeData* mime) {
 
 // Bump when the default dock arrangement changes so previously saved
 // layouts are discarded instead of restored over the new default.
-constexpr int kLayoutVersion = 6;
+constexpr int kLayoutVersion = 7;
 constexpr int kRightColumnWidth = 330;
 constexpr int kBottomStripHeight = 200;
 
@@ -218,7 +210,17 @@ void MainWindow::buildMenus() {
 
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("&About DASA"), this, [this]() {
-        spdlog::info("About dialog requested (not yet implemented)");
+        QMessageBox::about(
+            this, tr("About DASA"),
+            tr("<h3>Driver Attack Surface Analyzer %1</h3>"
+               "<p>Static analysis of Windows kernel drivers: how user mode reaches a driver, the IOCTLs and "
+               "handlers it exposes, which dangerous operations are reachable, and whether request data "
+               "controls them.</p>"
+               "<p>Built with Qt %2, LIEF, Capstone, SQLite and nlohmann/json. The KMDF function names come "
+               "from Microsoft's wdffuncenum.h (MIT).</p>"
+               "<p>Analysis database: %3</p>")
+                .arg(QString::fromStdString(core::Version::string()), QString::fromLatin1(qVersion()),
+                     QDir::toNativeSeparators(m_dbPath).toHtmlEscaped()));
     });
 }
 
@@ -227,17 +229,8 @@ QDockWidget* MainWindow::makeDock(const QString& title, const QString& objectNam
     dock->setObjectName(objectName);
     dock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable |
                        QDockWidget::DockWidgetClosable);
-    // Placeholder until the phase that implements this view replaces it, so
-    // an unbuilt view reads as "not built yet" rather than as a blank area.
-    auto* placeholder = new QLabel(
-        tr("<p style='font-size:11pt; color:#c8c8c8'>%1</p>"
-           "<p style='color:#8a8a8a'>Not built yet &mdash; this view arrives in a later phase.</p>")
-            .arg(title.toHtmlEscaped()),
-        dock);
-    placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setWordWrap(true);
-    placeholder->setMargin(16);
-    dock->setWidget(placeholder);
+    // Replaced by the view's widget in buildDockLayout().
+    dock->setWidget(new QWidget(dock));
     return dock;
 }
 
@@ -382,30 +375,33 @@ void MainWindow::buildDockLayout() {
         }
     }
 
+    // Swaps a dock's placeholder for its view.
+    const auto install = [](QDockWidget* dock, QWidget* view) {
+        delete dock->widget();
+        view->setParent(dock);
+        dock->setWidget(view);
+    };
     QDockWidget* firstBottom = nullptr;
-    for (const auto& spec : kDynamicDocks) {
-        auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
-        if (auto* label = qobject_cast<QLabel*>(dock->widget())) {
-            label->setText(tr("<p style='font-size:11pt; color:#c8c8c8'>%1</p>"
-                              "<p style='color:#8a8a8a'>Dynamic analysis loads the driver into a running kernel, so it "
-                              "needs a disposable test VM (test signing, kernel debugging, snapshots). It is not part "
-                              "of this build - everything else in DASA is static and safe to run on this PC.</p>")
-                               .arg(tr(spec.title).toHtmlEscaped()));
-        }
+    const auto addBottom = [&](QDockWidget* dock) {
         addDockWidget(Qt::BottomDockWidgetArea, dock);
         if (firstBottom) {
             tabifyDockWidget(firstBottom, dock);
         } else {
             firstBottom = dock;
         }
-    }
-
-    // Swaps a dock's "not built yet" placeholder for its view.
-    const auto install = [](QDockWidget* dock, QWidget* view) {
-        delete dock->widget();
-        view->setParent(dock);
-        dock->setWidget(view);
     };
+
+    // Reports first (Security Assessment is the bottom strip's first tab),
+    // then the database views.
+    for (const auto& spec : kReportDocks) {
+        auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
+        if (dock->objectName() == QLatin1String("dock_export")) {
+            install(dock, m_export = new ui::ExportWidget);
+        } else if (dock->objectName() == QLatin1String("dock_security_assessment")) {
+            install(dock, m_assessment = new ui::AssessmentWidget);
+        }
+        addBottom(dock);
+    }
 
     for (const auto& spec : kDatabaseDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
@@ -416,21 +412,7 @@ void MainWindow::buildDockLayout() {
         } else if (dock->objectName() == QLatin1String("dock_previous_findings")) {
             install(dock, m_previousFindings = new ui::PreviousFindingsWidget);
         }
-        addDockWidget(Qt::BottomDockWidgetArea, dock);
-        tabifyDockWidget(firstBottom, dock);
-    }
-
-    // Reports share the bottom strip, which has room for their tabs; the
-    // narrow right column keeps only the research views.
-    for (const auto& spec : kReportDocks) {
-        auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
-        if (dock->objectName() == QLatin1String("dock_export")) {
-            install(dock, m_export = new ui::ExportWidget);
-        } else if (dock->objectName() == QLatin1String("dock_security_assessment")) {
-            install(dock, m_assessment = new ui::AssessmentWidget);
-        }
-        addDockWidget(Qt::BottomDockWidgetArea, dock);
-        tabifyDockWidget(firstBottom, dock);
+        addBottom(dock);
     }
 
     const auto openStored = [this](const QString& path) {
