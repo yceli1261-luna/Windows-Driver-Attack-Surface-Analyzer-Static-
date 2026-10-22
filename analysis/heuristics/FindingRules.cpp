@@ -75,6 +75,8 @@ public:
 
     std::vector<Finding> run() {
         reachability();
+        dataFlow();
+        annotateReachWithDataFlow();
         deviceSecurity();
         ioctlProperties();
         capabilities();
@@ -296,9 +298,9 @@ private:
             f.description = why + ". A program that can open the device reaches this " +
                             std::string(category == sec::ApiCategory::Hardware ? "instruction" : "call") +
                             " by sending a request handled by " + roots.front() +
-                            ". DASA shows the call path; it has not yet established whether the request's data "
-                            "controls the arguments (that is the data-flow phase), so treat this as a lead to "
-                            "verify.";
+                            ". This finding is about reachability; whether the request's data controls the "
+                            "arguments is in the data-flow note in the evidence and in any DASA-TAINT finding for "
+                            "the same call.";
             if (!m_exposed) {
                 f.description += " No user-mode name or interface for the device was recovered, so the severity "
                                  "is lowered one step.";
@@ -324,6 +326,221 @@ private:
             }
         }
         m_findings.push_back(std::move(f));
+    }
+
+
+    // ------------------------------------------------------- data flow ----
+
+    static Severity fromFlow(core::dataflow::Severity s) {
+        switch (s) {
+        case core::dataflow::Severity::Critical: return Severity::Critical;
+        case core::dataflow::Severity::High: return Severity::High;
+        case core::dataflow::Severity::Medium: break;
+        }
+        return Severity::Medium;
+    }
+
+    static std::string flowRuleId(const core::dataflow::TaintFlow& f) {
+        using K = core::dataflow::SinkKind;
+        switch (f.kind) {
+        case K::ApiArgument: return "DASA-TAINT-API";
+        case K::Instruction: return "DASA-TAINT-INSTRUCTION";
+        case K::MemoryWrite: break;
+        case K::MemoryRead: {
+            const bool userPointerOnly =
+                !f.operands.empty() && f.operands.front().labels == core::dataflow::kUserPointer;
+            return userPointerOnly ? "DASA-UNPROBED-USER-POINTER" : "DASA-TAINT-READ";
+        }
+        }
+        const bool userPointerOnly = !f.operands.empty() && f.operands.front().labels == core::dataflow::kUserPointer;
+        return userPointerOnly ? "DASA-UNPROBED-USER-POINTER" : "DASA-TAINT-WRITE";
+    }
+
+    static std::string flowTitle(const core::dataflow::TaintFlow& f) {
+        using K = core::dataflow::SinkKind;
+        std::string names;
+        for (const auto& o : f.operands) {
+            names += (names.empty() ? "" : ", ") + o.name;
+        }
+        switch (f.kind) {
+        case K::ApiArgument: return "Request data controls " + names + " of " + f.sink;
+        case K::Instruction: return "Request data reaches " + f.sink + " (" + names + ")";
+        case K::MemoryWrite:
+            return flowRuleId(f) == "DASA-UNPROBED-USER-POINTER" ? "Write through an unprobed user-mode pointer"
+                                                                 : "Write to an address taken from the request";
+        case K::MemoryRead:
+            return flowRuleId(f) == "DASA-UNPROBED-USER-POINTER" ? "Read through an unprobed user-mode pointer"
+                                                                 : "Read from an address taken from the request";
+        }
+        return f.sink;
+    }
+
+    static std::string flowRecommendation(const core::dataflow::TaintFlow& f) {
+        using K = core::dataflow::SinkKind;
+        if (flowRuleId(f) == "DASA-UNPROBED-USER-POINTER") {
+            return "Call ProbeForRead/ProbeForWrite on the pointer inside __try/__except before touching it, or "
+                   "use METHOD_BUFFERED so the I/O manager copies the data. Capture the data once to avoid "
+                   "double-fetch races.";
+        }
+        switch (f.kind) {
+        case K::ApiArgument:
+            return "Don't pass request data to this API unchecked: validate addresses and lengths against fixed, "
+                   "driver-owned ranges (an allow-list), check lengths against the real buffer sizes, and "
+                   "restrict the device to administrators.";
+        case K::Instruction:
+            return "Never let a request choose MSR numbers, ports or register values. Remove the capability or "
+                   "limit it to a fixed allow-list, and restrict the device to administrators.";
+        case K::MemoryWrite:
+        case K::MemoryRead:
+            break;
+        }
+        return "Don't use addresses or offsets from the request to access kernel memory. Pass offsets into a "
+               "driver-owned buffer and bound-check them, or redesign the interface.";
+    }
+
+    void dataFlow() {
+        for (const auto& flow : m_in.dataflow.flows) {
+            const bool fromUser = isUserRequestRoot(flow.entry);
+            if (!fromUser && !isInternalRoot(flow.entry)) {
+                continue;
+            }
+            Finding f;
+            f.ruleId = flowRuleId(flow);
+            f.category = "Input handling";
+            f.severity = fromFlow(flow.severity);
+            const bool lengthsOnly = std::all_of(flow.operands.begin(), flow.operands.end(), [](const auto& o) {
+                return o.labels == core::dataflow::kUserLength;
+            });
+            f.confidence = lengthsOnly ? FindingConfidence::Medium : FindingConfidence::High;
+            f.title = flowTitle(flow);
+            f.description = flow.impact + ".";
+            for (const auto& o : flow.operands) {
+                f.description += " " + o.name + " comes from " + (o.source.empty() ? "request data" : o.source) +
+                                 (o.sourceAt ? " (read at " + hex(o.sourceAt) + ")" : "") + ".";
+            }
+            f.description += " DASA follows the data through registers, stack slots and direct calls; it doesn't "
+                             "recognise range checks, so confirm whether the value is validated before this point.";
+            if (!fromUser) {
+                f.severity = lower(lower(f.severity));
+                f.title += " (kernel-mode senders)";
+                f.description += " The handler is internal device control, which only kernel-mode components can "
+                                 "send.";
+            } else if (!m_exposed) {
+                f.severity = lower(f.severity);
+                f.description += " No user-mode name or interface for the device was recovered, so the severity "
+                                 "is lowered one step.";
+            }
+            if (flow.requestorModeChecked) {
+                f.severity = lower(f.severity);
+                f.confidence = FindingConfidence::Low;
+                f.description += " The handler reads Irp->RequestorMode, so it may accept this data only from "
+                                 "kernel-mode callers; DASA can't tell whether that check guards this path, so the "
+                                 "severity is lowered one step.";
+            }
+            f.recommendation = flowRecommendation(flow);
+
+            EvidenceChain chain;
+            chain.push_back(userNameStep());
+            if (!flow.path.empty()) {
+                EvidenceStep entry;
+                entry.kind = Step::EntryPoint;
+                entry.label = flow.entry;
+                entry.detail = fnName(flow.path.front());
+                entry.rva = flow.path.front();
+                entry.function = flow.path.front();
+                chain.push_back(entry);
+            }
+            if (!flow.ioctls.empty()) {
+                EvidenceStep io;
+                io.kind = Step::Ioctl;
+                std::string list;
+                for (std::size_t i = 0; i < flow.ioctls.size() && i < 3; ++i) {
+                    list += (i ? ", " : "") + core::ioctl::hexCode(flow.ioctls[i]);
+                }
+                if (flow.ioctls.size() > 3) {
+                    list += " and " + std::to_string(flow.ioctls.size() - 3) + " more";
+                }
+                io.label = (flow.ioctls.size() == 1 ? "IOCTL " : "IOCTLs ") + list;
+                io.detail = flow.ioctlsExact ? "its case branch leads here" : "compared on the path (case not resolved)";
+                chain.push_back(io);
+            }
+            for (const auto& o : flow.operands) {
+                EvidenceStep src;
+                src.kind = Step::DataSource;
+                src.label = o.source.empty() ? "request data" : o.source;
+                src.detail = "becomes " + o.name + " (" + core::dataflow::describeLabels(o.labels) + ")";
+                if (o.sourceAt) {
+                    src.rva = o.sourceAt;
+                }
+                chain.push_back(src);
+            }
+            for (std::size_t i = 1; i < flow.path.size(); ++i) {
+                EvidenceStep fn;
+                fn.kind = Step::Function;
+                fn.label = fnName(flow.path[i]);
+                fn.detail = "called from " + fnName(flow.path[i - 1]) + " with the data";
+                fn.rva = flow.path[i];
+                fn.function = flow.path[i];
+                chain.push_back(fn);
+            }
+            EvidenceStep last;
+            last.kind = flow.kind == core::dataflow::SinkKind::ApiArgument ? Step::Call : Step::Instruction;
+            last.label = flow.kind == core::dataflow::SinkKind::ApiArgument
+                             ? flow.sink
+                             : flow.sink + " (" + core::dataflow::sinkKindName(flow.kind) + ")";
+            last.detail = flow.impact + ", in " + fnName(flow.function);
+            last.rva = flow.at;
+            last.function = flow.function;
+            chain.push_back(last);
+            f.evidence.push_back(std::move(chain));
+            m_findings.push_back(std::move(f));
+        }
+    }
+
+    static std::string compactHex(std::int64_t v) {
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), "0x%llX", static_cast<unsigned long long>(v));
+        return buf;
+    }
+
+    // Adds what data flow found at each reachable call to DASA-REACH-*.
+    void annotateReachWithDataFlow() {
+        for (auto& f : m_findings) {
+            if (f.ruleId.rfind("DASA-REACH", 0) != 0) {
+                continue;
+            }
+            for (auto& chain : f.evidence) {
+                if (chain.empty() || !chain.back().rva) {
+                    continue;
+                }
+                const std::uint64_t at = *chain.back().rva;
+                EvidenceStep note;
+                note.kind = Step::Note;
+                note.rva = at;
+                const auto flow = std::find_if(m_in.dataflow.flows.begin(), m_in.dataflow.flows.end(),
+                                               [&](const auto& x) { return x.at == at; });
+                const auto checked = std::find_if(m_in.dataflow.checkedCalls.begin(), m_in.dataflow.checkedCalls.end(),
+                                                  [&](const auto& x) { return x.at == at; });
+                if (flow != m_in.dataflow.flows.end()) {
+                    note.label = "Data flow: request data reaches this operation";
+                    note.detail = "see " + flowRuleId(*flow) + " - " + flowTitle(*flow);
+                } else if (checked != m_in.dataflow.checkedCalls.end()) {
+                    std::string args;
+                    bool allConstant = true;
+                    for (const auto& a : checked->args) {
+                        using AK = core::dataflow::CheckedCall::Arg::Kind;
+                        args += (args.empty() ? "" : ", ") + a.name + " = " +
+                                (a.kind == AK::Constant ? compactHex(a.value) : "not traced");
+                        allConstant = allConstant && a.kind == AK::Constant;
+                    }
+                    note.label = allConstant ? "Data flow: the arguments are constants" : "Data flow: no request data found in the arguments";
+                    note.detail = args + (allConstant ? " - the request can't choose them" : "");
+                } else {
+                    continue;
+                }
+                chain.push_back(std::move(note));
+            }
+        }
     }
 
     // ------------------------------------------------- device security ----

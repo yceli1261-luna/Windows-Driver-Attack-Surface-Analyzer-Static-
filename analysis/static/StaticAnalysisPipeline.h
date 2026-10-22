@@ -9,6 +9,7 @@
 #include "core/ioctl/IoctlExtractor.h"
 #include "core/pe/PEImage.h"
 #include "core/findings/Finding.h"
+#include "core/dataflow/TaintAnalyzer.h"
 #include "core/security/KernelApiAnalyzer.h"
 
 namespace dasa::analysis {
@@ -23,6 +24,7 @@ struct AnalysisResult {
     std::shared_ptr<const core::ioctl::IoctlAnalysis> ioctls;
     std::shared_ptr<const core::driver::DeviceAnalysis> devices;
     std::shared_ptr<const core::security::KernelApiAnalysis> kernelApis;
+    std::shared_ptr<const core::dataflow::DataFlowAnalysis> dataflow;
     std::shared_ptr<const core::findings::FindingsReport> findings;
     double parseSeconds = 0.0;
     double functionSeconds = 0.0;

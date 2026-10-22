@@ -25,6 +25,7 @@
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "core/database/AnalysisDatabase.h"
 #include "ui/dashboard/DashboardWidget.h"
+#include "ui/dataflow_view/DataFlowWidget.h"
 #include "ui/graph_view/CallGraphWidget.h"
 #include "ui/graph_view/ControlFlowWidget.h"
 #include "ui/database_view/CompareWidget.h"
@@ -273,6 +274,10 @@ void MainWindow::buildDockLayout() {
             delete dock->widget();
             m_controlFlow = new ui::ControlFlowWidget(dock);
             dock->setWidget(m_controlFlow);
+        } else if (dock->objectName() == QLatin1String("dock_data_flow")) {
+            delete dock->widget();
+            m_dataFlow = new ui::DataFlowWidget(dock);
+            dock->setWidget(m_dataFlow);
         } else if (dock->objectName() == QLatin1String("dock_evidence")) {
             delete dock->widget();
             m_evidence = new ui::EvidenceWidget(dock);
@@ -298,6 +303,7 @@ void MainWindow::buildDockLayout() {
     connect(m_ioctls, &ui::IoctlWidget::functionActivated, this, openFunction);
     connect(m_kernelApis, &ui::KernelApiWidget::functionActivated, this, openFunction);
     connect(m_evidence, &ui::EvidenceWidget::functionActivated, this, openFunction);
+    connect(m_dataFlow, &ui::DataFlowWidget::functionActivated, this, openFunction);
     connect(m_findings, &ui::FindingsWidget::findingSelected, m_evidence, &ui::EvidenceWidget::showFinding);
 
     // Control Flow follows the function selected in Functions. Choosing a
@@ -511,6 +517,7 @@ void MainWindow::loadDriver(const QString& path) {
     m_findings->clear();
     m_evidence->clear();
     m_callGraph->clear();
+    m_dataFlow->clear();
     m_controlFlow->clear();
     m_previousFindings->clear();
     m_export->clear();
@@ -581,6 +588,7 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_findings->setResult(result); // selects the first finding, which fills Evidence
     m_export->setResult(result);
     m_callGraph->setResult(result);
+    m_dataFlow->setResult(result);
     m_controlFlow->setResult(result);
     m_history->refresh();
     m_compare->refresh();

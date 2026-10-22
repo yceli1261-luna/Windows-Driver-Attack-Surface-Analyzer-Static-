@@ -27,6 +27,7 @@ QString kindName(fnd::EvidenceStep::Kind k) {
     case K::Call: return QObject::tr("Call");
     case K::Instruction: return QObject::tr("Instruction");
     case K::Header: return QObject::tr("PE header");
+    case K::DataSource: return QObject::tr("Data from");
     case K::Note: break;
     }
     return QObject::tr("Note");

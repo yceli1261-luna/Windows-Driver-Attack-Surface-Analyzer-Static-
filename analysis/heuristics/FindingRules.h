@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/driver/DeviceObjects.h"
+#include "core/dataflow/TaintAnalyzer.h"
 #include "core/driver/DriverModel.h"
 #include "core/findings/Finding.h"
 #include "core/functions/FunctionDiscoverer.h"
@@ -17,6 +18,7 @@ struct FindingInputs {
     const core::ioctl::IoctlAnalysis& ioctls;
     const core::driver::DeviceAnalysis& devices;
     const core::security::KernelApiAnalysis& kernelApis;
+    const core::dataflow::DataFlowAnalysis& dataflow;
 };
 
 /// Turns the static analysis results into findings with evidence chains
@@ -43,10 +45,16 @@ struct FindingInputs {
 ///       Image hardening.
 ///   DASA-UNCALLED-CRITICAL-IMPORT
 ///       Critical API imported with no call site found (low confidence).
+///   DASA-TAINT-API, DASA-TAINT-INSTRUCTION, DASA-TAINT-WRITE,
+///   DASA-TAINT-READ, DASA-UNPROBED-USER-POINTER
+///       Request data traced (core/dataflow) into a sensitive API argument,
+///       a privileged instruction, or the address of a memory access.
+///       Chain: user-mode name -> handler -> IOCTL whose case leads there ->
+///       where each value was read -> call path -> the operation.
 ///
-/// Reachability is over the call graph, not data flow: a finding says the
-/// dangerous call can be reached from a user request, not that the
-/// request's data controls its arguments. Confidence reflects that.
+/// DASA-REACH-* say the dangerous call can be reached from a user request;
+/// their evidence notes what data flow found at that call (arguments that
+/// are constants, or a DASA-TAINT finding).
 core::findings::FindingsReport generateFindings(const FindingInputs& in);
 
 } // namespace dasa::analysis

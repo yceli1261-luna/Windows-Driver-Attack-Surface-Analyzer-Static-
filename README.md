@@ -137,6 +137,31 @@ double-clicking navigates both. Functions over 700 blocks aren't drawn.
 Calls through pointers (callbacks, the WDF function table) aren't call
 graph edges.
 
+**Phase 10 — data flow (done).** `core/dataflow/TaintAnalyzer` follows
+request data from the user-request handlers (IRP_MJ_DEVICE_CONTROL /
+INTERNAL_DEVICE_CONTROL / WRITE, KMDF EvtIoDeviceControl /
+EvtIoInternalDeviceControl / EvtIoWrite) through registers, stack slots
+and direct calls (arguments in, return values out) over each function's
+control-flow graph, to sensitive API arguments (MmMapIoSpace, memcpy,
+ExFreePool, PsLookupProcessByProcessId, ...), privileged instructions
+(wrmsr, rdmsr, in/out, mov crN) and memory accesses through
+request-chosen addresses or unprobed user pointers. Sources are the
+SystemBuffer contents, buffer lengths, Type3InputBuffer, Irp->UserBuffer
+and the KMDF EvtIo* lengths / WdfRequestRetrieve*Buffer outputs;
+ProbeForRead/Write and inline `MmUserProbeAddress` checks count as probes.
+Each flow names where every value was read and which IOCTL's case leads
+to it. New findings DASA-TAINT-API / -INSTRUCTION / -WRITE / -READ and
+DASA-UNPROBED-USER-POINTER; DASA-REACH-* now note when a call's arguments
+are constants. Shown in the Data Flow dock and the reports.
+
+Limits: x64 only; paths are merged rather than tracked separately; range
+checks aren't recognised (a flow means "can reach"); heap/global memory,
+indirect calls and switch-table cases aren't followed; for IRP_MJ_WRITE
+only the length is traced; handlers that read Irp->RequestorMode get
+their flows lowered because they may accept such data only from kernel
+callers. On large Microsoft drivers the results are still noisy - it is
+tuned for small third-party drivers.
+
 The other docks are still empty; each is filled by the phase that
 implements its view.
 
@@ -224,6 +249,15 @@ link step fails with LNK1168 (file in use).
   unresolved switch jump), and its call graph (DeviceControl → helper →
   MmMapIoSpace, three RtlInitUnicodeString call sites, entry-point roles,
   neighbourhoods, recursion on a hand-built cycle).
+
+- Data flow against `DASATaintSample.sys`, written by
+  `tests/fixtures/drivers/gen_taint_fixture.py` (instructions checked with
+  Python's capstone): request data into MmMapIoSpace through a helper,
+  memcpy destination and length, wrmsr operands, a write-what-where, an
+  unprobed METHOD_NEITHER read, and a probed one that must not be
+  reported - with the exact source of each value and the IOCTL whose case
+  leads there; the resulting findings; and the WDM fixture's
+  MmMapIoSpace call, whose constant arguments must not be a flow.
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

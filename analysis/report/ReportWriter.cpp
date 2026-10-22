@@ -48,6 +48,7 @@ const char* stepKind(fnd::EvidenceStep::Kind k) {
     case K::Call: return "call";
     case K::Instruction: return "instruction";
     case K::Header: return "header";
+    case K::DataSource: return "data-source";
     case K::Note: break;
     }
     return "note";
@@ -205,6 +206,56 @@ json buildJson(const AnalysisResult& r) {
     }
     j["kernelApis"] = apis;
     j["privilegedInstructions"] = priv;
+
+    namespace df = core::dataflow;
+    json flows = json::array();
+    for (const auto& f : r.dataflow->flows) {
+        json ops = json::array();
+        for (const auto& o : f.operands) {
+            ops.push_back({{"name", o.name},
+                           {"labels", df::describeLabels(o.labels)},
+                           {"source", o.source},
+                           {"sourceAt", o.sourceAt ? json(hex(o.sourceAt)) : json(nullptr)}});
+        }
+        json path = json::array();
+        for (auto p : f.path) {
+            path.push_back(functionName(r, p));
+        }
+        json codes = json::array();
+        for (auto c : f.ioctls) {
+            codes.push_back(core::ioctl::hexCode(c));
+        }
+        flows.push_back({{"sink", f.sink},
+                         {"kind", df::sinkKindName(f.kind)},
+                         {"severity", df::severityName(f.severity)},
+                         {"impact", f.impact},
+                         {"at", hex(f.at)},
+                         {"function", functionName(r, f.function)},
+                         {"entry", f.entry},
+                         {"path", path},
+                         {"ioctls", codes},
+                         {"ioctlsExact", f.ioctlsExact},
+                         {"requestorModeChecked", f.requestorModeChecked},
+                         {"operands", ops}});
+    }
+    json checked = json::array();
+    for (const auto& c : r.dataflow->checkedCalls) {
+        json args = json::array();
+        for (const auto& a : c.args) {
+            using K = df::CheckedCall::Arg::Kind;
+            args.push_back({{"name", a.name},
+                            {"kind", a.kind == K::UserControlled ? "user-controlled"
+                                     : a.kind == K::Constant     ? "constant"
+                                                                 : "unknown"},
+                            {"value", a.kind == K::Constant ? json(hex(static_cast<std::uint64_t>(a.value), 1)) : json(nullptr)}});
+        }
+        checked.push_back({{"api", c.api}, {"at", hex(c.at)}, {"function", functionName(r, c.function)},
+                           {"entry", c.entry}, {"arguments", args}});
+    }
+    j["dataFlow"] = {{"entries", r.dataflow->entries},
+                     {"flows", flows},
+                     {"checkedCalls", checked},
+                     {"notes", r.dataflow->notes}};
     j["functionCount"] = r.functions->functions.size();
 
     json findings = json::array();
@@ -349,6 +400,30 @@ std::string reportHtml(const AnalysisResult& r) {
     if (r.ioctls->ioctls.empty()) {
         o << "<p class=\"muted\">No IOCTL codes recovered.</p>";
     }
+
+    o << "<h2>Request data flows</h2>";
+    if (r.dataflow->flows.empty()) {
+        o << "<p class=\"muted\">" << (r.dataflow->entries.empty() ? "No request handler was traced." : "No request data was traced into a sensitive operation.") << "</p>";
+    } else {
+        o << "<div class=\"wrap\"><table><tr><th>Severity</th><th>Operation</th><th>Controlled by the request</th><th>IOCTL</th><th>Path</th></tr>";
+        for (const auto& f : r.dataflow->flows) {
+            std::string ops, path, codes;
+            for (const auto& x : f.operands) {
+                ops += (ops.empty() ? "" : "<br>") + e(x.name) + " &larr; <code>" + e(x.source) + "</code>";
+            }
+            for (auto p : f.path) {
+                path += (path.empty() ? "" : " &rarr; ") + e(functionName(r, p));
+            }
+            for (auto c : f.ioctls) {
+                codes += (codes.empty() ? "" : ", ") + core::ioctl::hexCode(c);
+            }
+            const std::string sev = core::dataflow::severityName(f.severity);
+            row(o, {"<span class=\"sev " + sev + "\">" + sev + "</span>", "<code>" + e(f.sink) + "</code><br><span class=\"muted\">" + e(f.impact) + "</span>",
+                    ops, codes.empty() ? "-" : codes, path + " <code>" + hex(f.at) + "</code>"});
+        }
+        o << "</table></div>";
+    }
+    o << "<p class=\"muted\">Traced through registers, stack slots and direct calls; range checks aren't recognised.</p>";
 
     o << "<h2>Devices</h2><div class=\"wrap\"><table><tr><th>Name</th><th>Created by</th><th>Type</th>"
          "<th>Secure open</th><th>SDDL</th></tr>";

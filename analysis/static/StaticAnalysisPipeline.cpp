@@ -42,9 +42,11 @@ std::shared_ptr<const AnalysisResult> runStaticAnalysis(const std::filesystem::p
         core::driver::analyzeDevices(*image, *result->functions, *result->driver));
     result->kernelApis = std::make_shared<const core::security::KernelApiAnalysis>(
         core::security::analyzeKernelApis(*image, *result->functions, *result->driver, *result->ioctls));
+    result->dataflow = std::make_shared<const core::dataflow::DataFlowAnalysis>(
+        core::dataflow::analyzeDataFlow(*image, *result->functions, *result->driver, *result->ioctls));
     result->findings = std::make_shared<const core::findings::FindingsReport>(generateFindings(
         FindingInputs{*image, *result->functions, *result->driver, *result->ioctls, *result->devices,
-                      *result->kernelApis}));
+                      *result->kernelApis, *result->dataflow}));
     result->surfaceSeconds = secondsSince(start);
     result->image = std::move(image);
 

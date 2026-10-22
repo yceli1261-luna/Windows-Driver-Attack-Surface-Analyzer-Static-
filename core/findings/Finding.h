@@ -16,7 +16,7 @@ const char* confidenceName(FindingConfidence c);
 /// One link in an evidence chain, e.g. a device name, an IRP handler, an
 /// IOCTL code, a function, a call site.
 struct EvidenceStep {
-    enum class Kind { UserModeName, Device, EntryPoint, Ioctl, Function, Call, Instruction, Header, Note };
+    enum class Kind { UserModeName, Device, EntryPoint, Ioctl, Function, Call, Instruction, Header, DataSource, Note };
     Kind kind = Kind::Note;
     std::string label;                 // "\\DosDevices\\Foo", "IRP_MJ_DEVICE_CONTROL", "MmMapIoSpace", ...
     std::string detail;                // supporting text
