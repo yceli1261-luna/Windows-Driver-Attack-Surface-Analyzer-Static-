@@ -22,6 +22,15 @@ class AnalysisDatabase;
 
 namespace dasa::ui {
 
+/// Company, description and version from a file's version resource (empty
+/// where absent).
+struct FileVersion {
+    QString company;
+    QString description;
+    QString version;
+};
+FileVersion fileVersionInfo(const QString& path);
+
 /// Security Assessment dock: the plain-language assessment of the loaded
 /// driver (analysis/report/Assessment) with links into the code.
 class AssessmentWidget : public QWidget {
@@ -99,6 +108,9 @@ public:
 signals:
     void openDriverRequested(const QString& path);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private:
     void scan();
     void applyFilter();
@@ -112,6 +124,7 @@ private:
     QLabel* m_status = nullptr;
     QTableWidget* m_table = nullptr;
     QString m_folder;
+    bool m_scanned = false;
 };
 
 } // namespace dasa::ui

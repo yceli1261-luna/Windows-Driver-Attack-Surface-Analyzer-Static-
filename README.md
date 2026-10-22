@@ -188,6 +188,18 @@ deltas. Security Assessment (`analysis/report/Assessment`) writes a
 plain-language verdict, how user mode reaches the driver, the top risks,
 protections present and missing, next steps and coverage limits.
 
+**Phase 13 — Simple mode (done).** DASA starts in Simple mode, written for
+people without reverse-engineering knowledge: an Overview with a
+traffic-light verdict (Safe / Worth a look / Risky / Dangerous), the maker
+and version of the file, and plain answers to "What can this driver do?",
+"Who can use it?" and "What should I do?"; a Problems list with every
+finding in plain words and its technical details one click away; and the
+Drivers list, which scans the PC as soon as it is opened. The wording
+comes from fixed templates per finding rule and capability category
+(`analysis/report/PlainLanguage`), so it says no more than the evidence.
+Expert mode (button in the status bar, View > Expert Mode, Ctrl+Shift+X)
+shows every view; Help > Glossary explains the technical terms.
+
 Dynamic analysis (loading the driver in a VM under Driver Verifier and
 WinDbg) is out of scope: DASA is a static analyzer, safe to run on the
 analyst's own machine.
@@ -295,6 +307,10 @@ link step fails with LNK1168 (file in use).
   the two generators; CreateClose matched across addresses by its
   fingerprint; a file against itself is all identical) and the security
   assessment of both fixtures.
+
+- Simple-mode wording for both fixtures and a quiet real driver (verdicts,
+  capabilities, who can use it, one problem per finding without
+  reverse-engineering jargon in the headlines).
 
 The fixture generators share `tests/fixtures/drivers/_pe_writer.py`. Tests
 that use files from `C:\Windows\System32\drivers` are skipped if the file

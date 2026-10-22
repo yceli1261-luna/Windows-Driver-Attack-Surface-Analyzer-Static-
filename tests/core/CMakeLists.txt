@@ -12,6 +12,7 @@ add_executable(dasa_core_tests
     DataFlowTest.cpp
     ResearchTest.cpp
     DiffAssessmentTest.cpp
+    PlainLanguageTest.cpp
 )
 
 target_link_libraries(dasa_core_tests

@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QMimeData>
 #include <QStatusBar>
 #include <QTabBar>
@@ -22,6 +23,7 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 
+#include "analysis/report/PlainLanguage.h"
 #include "analysis/report/ReportWriter.h"
 #include "analysis/static/StaticAnalysisPipeline.h"
 #include "core/Version.h"
@@ -30,6 +32,7 @@
 #include "ui/dataflow_view/DataFlowWidget.h"
 #include "ui/report_view/Phase12Widgets.h"
 #include "ui/research_view/ResearchWidgets.h"
+#include "ui/simple_view/SimpleWidgets.h"
 #include "ui/graph_view/CallGraphWidget.h"
 #include "ui/graph_view/ControlFlowWidget.h"
 #include "ui/database_view/CompareWidget.h"
@@ -57,6 +60,8 @@ struct DockSpec {
 };
 
 constexpr DockSpec kWorkspaceDocks[] = {
+    {"Overview", "dock_overview"},
+    {"Problems", "dock_problems"},
     {"Dashboard", "dock_dashboard"},
     {"Drivers", "dock_drivers"},
     {"Current Analysis", "dock_current_analysis"},
@@ -109,7 +114,7 @@ bool containsDriverUrl(const QMimeData* mime) {
 
 // Bump when the default dock arrangement changes so previously saved
 // layouts are discarded instead of restored over the new default.
-constexpr int kLayoutVersion = 7;
+constexpr int kLayoutVersion = 8;
 constexpr int kRightColumnWidth = 330;
 constexpr int kBottomStripHeight = 200;
 
@@ -127,11 +132,44 @@ MainWindow::MainWindow(QWidget* parent)
     buildStatusBar();
     openDatabase();
     restoreLayout();
+    applyMode(false); // always start in Simple mode
 
     spdlog::info("MainWindow constructed");
 }
 
 MainWindow::~MainWindow() = default;
+
+void MainWindow::openDriverDialog() {
+    const QString startDir = m_settings.value("lastDriverDir").toString();
+    const QString path = QFileDialog::getOpenFileName(this, tr("Open Driver"), startDir,
+                                                      tr("Windows drivers (*.sys);;All files (*)"));
+    if (!path.isEmpty()) {
+        loadDriver(path);
+    }
+}
+
+void MainWindow::applyMode(bool expert) {
+    m_expert = expert;
+    static const QStringList simpleDocks{QStringLiteral("dock_overview"), QStringLiteral("dock_problems"),
+                                         QStringLiteral("dock_drivers")};
+    for (auto* dock : findChildren<QDockWidget*>()) {
+        dock->setVisible(expert || simpleDocks.contains(dock->objectName()));
+    }
+    if (m_expertAction) {
+        const QSignalBlocker block(m_expertAction);
+        m_expertAction->setChecked(expert);
+    }
+    if (m_modeButton) {
+        m_modeButton->setText(expert ? tr("Switch to Simple mode") : tr("Expert mode: show the full analysis"));
+    }
+    // Showing tabified docks leaves whichever was shown last in front; put
+    // each group's first tab forward instead.
+    for (const char* name : {"dock_security_assessment", "dock_search", "dock_overview"}) {
+        if (auto* dock = findChild<QDockWidget*>(QString::fromLatin1(name)); dock && dock->isVisible()) {
+            dock->raise();
+        }
+    }
+}
 
 void MainWindow::openDatabase() {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -159,15 +197,7 @@ void MainWindow::buildMenus() {
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
     QAction* openAction = fileMenu->addAction(tr("&Open Driver..."));
     openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, [this]() {
-        const QString startDir = m_settings.value("lastDriverDir").toString();
-        const QString path = QFileDialog::getOpenFileName(
-            this, tr("Open Driver"), startDir,
-            tr("Windows drivers (*.sys);;All files (*)"));
-        if (!path.isEmpty()) {
-            loadDriver(path);
-        }
-    });
+    connect(openAction, &QAction::triggered, this, &MainWindow::openDriverDialog);
     fileMenu->addSeparator();
     QAction* exportHtml = fileMenu->addAction(tr("Export &HTML Report..."));
     exportHtml->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_E));
@@ -192,9 +222,21 @@ void MainWindow::buildMenus() {
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
+    m_expertAction = viewMenu->addAction(tr("&Expert Mode"));
+    m_expertAction->setCheckable(true);
+    m_expertAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_X));
+    connect(m_expertAction, &QAction::toggled, this, [this](bool on) {
+        if (on != m_expert) {
+            applyMode(on);
+        }
+    });
+    viewMenu->addSeparator();
     QAction* findAction = viewMenu->addAction(tr("&Search..."));
     findAction->setShortcut(QKeySequence::Find);
     connect(findAction, &QAction::triggered, this, [this] {
+        if (!m_expert) {
+            applyMode(true); // Search is an Expert-mode view
+        }
         if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_search"))) {
             dock->show();
             dock->raise();
@@ -209,6 +251,7 @@ void MainWindow::buildMenus() {
     });
 
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("&Glossary"), this, [this]() { ui::showGlossary(this); });
     helpMenu->addAction(tr("&About DASA"), this, [this]() {
         QMessageBox::about(
             this, tr("About DASA"),
@@ -241,7 +284,15 @@ void MainWindow::buildDockLayout() {
     QDockWidget* firstLeft = nullptr;
     for (const auto& spec : kWorkspaceDocks) {
         auto* dock = makeDock(tr(spec.title), QString::fromLatin1(spec.objectName));
-        if (dock->objectName() == QLatin1String("dock_dashboard")) {
+        if (dock->objectName() == QLatin1String("dock_overview")) {
+            delete dock->widget();
+            m_overview = new ui::OverviewWidget(dock);
+            dock->setWidget(m_overview);
+        } else if (dock->objectName() == QLatin1String("dock_problems")) {
+            delete dock->widget();
+            m_problems = new ui::ProblemsWidget(dock);
+            dock->setWidget(m_problems);
+        } else if (dock->objectName() == QLatin1String("dock_dashboard")) {
             // makeDock() gave it an empty placeholder; setWidget() doesn't
             // delete the old one.
             delete dock->widget();
@@ -425,6 +476,16 @@ void MainWindow::buildDockLayout() {
     connect(m_history, &ui::HistoryWidget::openDriverRequested, this, openStored);
     connect(m_tags, &ui::TagsWidget::openDriverRequested, this, openStored);
     connect(m_drivers, &ui::DriversWidget::openDriverRequested, this, openStored);
+    const auto raiseDock = [this](const char* name) {
+        if (auto* dock = findChild<QDockWidget*>(QString::fromLatin1(name))) {
+            dock->show();
+            dock->raise();
+        }
+    };
+    connect(m_overview, &ui::OverviewWidget::driversRequested, this, [raiseDock] { raiseDock("dock_drivers"); });
+    connect(m_overview, &ui::OverviewWidget::problemsRequested, this, [raiseDock] { raiseDock("dock_problems"); });
+    connect(m_overview, &ui::OverviewWidget::openFileRequested, this, &MainWindow::openDriverDialog);
+    connect(m_overview, &ui::OverviewWidget::exportRequested, this, [this] { m_export->exportHtml(); });
     connect(m_assessment, &ui::AssessmentWidget::exportRequested, this, [this] { m_export->exportHtml(); });
     connect(m_workspace, &ui::WorkspaceWidget::openDriverRequested, this, openStored);
     // Research: navigation and keeping the workspace current.
@@ -485,6 +546,13 @@ void MainWindow::buildDockLayout() {
 void MainWindow::buildStatusBar() {
     m_statusDriverLabel = new QLabel(tr("No driver loaded"), this);
     statusBar()->addWidget(m_statusDriverLabel);
+    // Always visible, so beginners find the full analysis and experts find the way back.
+    m_modeButton = new QPushButton(this);
+    m_modeButton->setFlat(true);
+    m_modeButton->setCursor(Qt::PointingHandCursor);
+    m_modeButton->setStyleSheet(QStringLiteral("QPushButton { color: white; font-weight: 600; padding: 2px 10px; }"));
+    connect(m_modeButton, &QPushButton::clicked, this, [this] { applyMode(!m_expert); });
+    statusBar()->addPermanentWidget(m_modeButton);
     statusBar()->showMessage(tr("Ready"), 3000);
 }
 
@@ -594,7 +662,9 @@ void MainWindow::loadDriver(const QString& path) {
     m_previousFindings->clear();
     m_export->clear();
     m_dashboard->setRiskSummary(QString());
-    if (auto* dock = findChild<QDockWidget*>(QStringLiteral("dock_dashboard"))) {
+    m_overview->showLoading(info.fileName());
+    m_problems->clear();
+    if (auto* dock = findChild<QDockWidget*>(m_expert ? QStringLiteral("dock_dashboard") : QStringLiteral("dock_overview"))) {
         dock->show();
         dock->raise();
     }
@@ -645,6 +715,7 @@ void MainWindow::onAnalysisFinished(const QString& path,
     const QString name = QFileInfo(path).fileName();
     if (!result) {
         m_dashboard->showError(path, error);
+        m_overview->showError(name, error);
         m_currentAnalysis->clear();
         m_statusDriverLabel->setText(tr("Failed to analyze %1").arg(name));
         statusBar()->showMessage(tr("Could not analyze %1: %2").arg(name, error), 8000);
@@ -662,6 +733,8 @@ void MainWindow::onAnalysisFinished(const QString& path,
     m_export->setResult(result);
     m_callGraph->setResult(result);
     m_dataFlow->setResult(result);
+    m_overview->setResult(result);
+    m_problems->setResult(result);
     m_assessment->setResult(result);
     m_diff->setResult(result);
     m_currentAnalysis->setResult(result, storedId);
@@ -684,15 +757,21 @@ void MainWindow::onAnalysisFinished(const QString& path,
             .arg(QString::fromStdString(risk.level))
             .arg(result->findings->findings.size()));
     m_statusDriverLabel->setText(tr("Loaded: %1").arg(name));
-    statusBar()->showMessage(tr("%1: risk %6/100 (%7), %2 driver, %3 functions, %4 IOCTLs, %5 device objects")
-                                 .arg(name)
-                                 .arg(QString::fromLatin1(core::driver::modelName(result->driver->model.kind)))
-                                 .arg(result->functions->functions.size())
-                                 .arg(result->ioctls->ioctls.size())
-                                 .arg(result->devices->devices.size())
-                                 .arg(result->findings->risk.score)
-                                 .arg(QString::fromStdString(result->findings->risk.level)),
-                             8000);
+    if (!m_expert) {
+        statusBar()->showMessage(tr("%1 checked: %2").arg(name, QString::fromLatin1(analysis::verdictName(
+                                                                   analysis::explain(*result).verdict))),
+                                 8000);
+    } else {
+        statusBar()->showMessage(tr("%1: risk %6/100 (%7), %2 driver, %3 functions, %4 IOCTLs, %5 device objects")
+                                     .arg(name)
+                                     .arg(QString::fromLatin1(core::driver::modelName(result->driver->model.kind)))
+                                     .arg(result->functions->functions.size())
+                                     .arg(result->ioctls->ioctls.size())
+                                     .arg(result->devices->devices.size())
+                                     .arg(result->findings->risk.score)
+                                     .arg(QString::fromStdString(result->findings->risk.level)),
+                                 8000);
+    }
     if (!storeError.isEmpty()) {
         statusBar()->showMessage(tr("%1 analyzed, but it couldn't be saved to the database: %2")
                                      .arg(name, storeError),

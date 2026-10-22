@@ -13,6 +13,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSet>
+#include <QShowEvent>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTextBrowser>
@@ -604,6 +605,21 @@ DriversWidget::DriversWidget(QWidget* parent) : QWidget(parent) {
         emit openDriverRequested(m_table->item(row, 0)->data(kPathRole).toString());
     });
     m_status->setText(tr("Click Rescan to list drivers."));
+}
+
+FileVersion fileVersionInfo(const QString& path) {
+    DriverFile f;
+    f.path = path;
+    readVersionInfo(f);
+    return {f.company, f.description, f.version};
+}
+
+void DriversWidget::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (!m_scanned) {
+        m_scanned = true; // list the drivers as soon as the tab is first opened
+        scan();
+    }
 }
 
 void DriversWidget::setDatabase(std::shared_ptr<core::database::AnalysisDatabase> db) {

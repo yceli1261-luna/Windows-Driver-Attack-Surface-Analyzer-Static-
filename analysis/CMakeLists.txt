@@ -20,6 +20,8 @@ add_library(dasa_analysis STATIC
     diff/AnalysisDiff.cpp
     report/Assessment.h
     report/Assessment.cpp
+    report/PlainLanguage.h
+    report/PlainLanguage.cpp
 )
 
 target_link_libraries(dasa_analysis

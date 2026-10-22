@@ -5,7 +5,9 @@
 
 #include <memory>
 
+class QAction;
 class QDockWidget;
+class QPushButton;
 class QLabel;
 class QDragEnterEvent;
 class QDragMoveEvent;
@@ -24,6 +26,8 @@ class CallGraphWidget;
 class CompareWidget;
 class ControlFlowWidget;
 class DataFlowWidget;
+class OverviewWidget;
+class ProblemsWidget;
 class AssessmentWidget;
 class CurrentAnalysisWidget;
 class DiffWidget;
@@ -85,6 +89,10 @@ protected:
 
 private:
     void buildMenus();
+    /// Simple mode shows only Overview, Problems and Drivers; Expert mode
+    /// shows every view. The app always starts in Simple mode.
+    void applyMode(bool expert);
+    void openDriverDialog();
     void buildDockLayout();
     void buildStatusBar();
     QDockWidget* makeDock(const QString& title, const QString& objectName);
@@ -108,6 +116,11 @@ private:
     ui::CallGraphWidget* m_callGraph = nullptr;
     ui::ControlFlowWidget* m_controlFlow = nullptr;
     ui::DataFlowWidget* m_dataFlow = nullptr;
+    ui::OverviewWidget* m_overview = nullptr;
+    ui::ProblemsWidget* m_problems = nullptr;
+    bool m_expert = false;
+    QAction* m_expertAction = nullptr;
+    QPushButton* m_modeButton = nullptr;
     ui::AssessmentWidget* m_assessment = nullptr;
     ui::CurrentAnalysisWidget* m_currentAnalysis = nullptr;
     ui::DiffWidget* m_diff = nullptr;

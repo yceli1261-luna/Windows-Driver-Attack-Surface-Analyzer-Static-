@@ -47,6 +47,8 @@ add_library(dasa_ui STATIC
     research_view/ResearchWidgets.cpp
     report_view/Phase12Widgets.h
     report_view/Phase12Widgets.cpp
+    simple_view/SimpleWidgets.h
+    simple_view/SimpleWidgets.cpp
 )
 
 target_include_directories(dasa_ui
