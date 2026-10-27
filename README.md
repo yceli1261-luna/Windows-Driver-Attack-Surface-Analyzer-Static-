@@ -8,6 +8,110 @@ mode written for non-experts; Expert mode shows the full analysis. See
 is a native rewrite of an earlier Python prototype, which is not part of
 this repository.
 
+## How to run DASA
+
+DASA is a Windows desktop app that you build from source once. It only
+**reads** driver files - it never loads or runs them - so it is safe to use
+on your own PC.
+
+### 1. Install the tools (once)
+
+| What | Where to get it | Notes |
+|---|---|---|
+| Windows 10 or 11, 64-bit | - | About 15 GB free disk space for the first build |
+| Visual Studio 2022 | [visualstudio.microsoft.com](https://visualstudio.microsoft.com/) | The free **Community** edition is fine. In the installer, tick the workload **"Desktop development with C++"**. |
+| Git | [git-scm.com](https://git-scm.com/download/win) | |
+| vcpkg (C++ package manager) | see below | Downloads and builds Qt and the other libraries for you |
+
+Install vcpkg into `C:\vcpkg` - open **PowerShell** and run:
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+```
+
+### 2. Get the DASA source
+
+Put it in a **short folder path** such as `C:\src` - the build creates deeply
+nested library folders, and Windows' 260-character path limit breaks it
+under long paths (Desktop, Documents, OneDrive, ...).
+
+```powershell
+mkdir C:\src -Force
+cd C:\src
+git clone https://github.com/yceli1261-luna/Windows-Driver-Attack-Surface-Analyzer-Static-.git DASA
+cd DASA
+```
+
+### 3. Build it
+
+In PowerShell, inside the `DASA` folder, run this one line:
+
+```powershell
+cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && set VCPKG_ROOT=C:\vcpkg&& cmake --preset windows-msvc-release && cmake --build --preset windows-msvc-release'
+```
+
+- **The first build takes a long time** (often 30-90 minutes): vcpkg
+  downloads and compiles Qt and the other libraries. Later builds reuse
+  them and take a few minutes or less.
+- If you installed Visual Studio **Professional**, **Enterprise** or **Build
+  Tools**, replace `Community` in the path with that edition's folder name.
+- Keep `set VCPKG_ROOT=C:\vcpkg&&` exactly as written (no space before
+  `&&`).
+
+### 4. Start the app
+
+```powershell
+.\build\release\bin\dasa.exe
+```
+
+You can also double-click `dasa.exe` in `build\release\bin`, or open a
+driver directly:
+
+```powershell
+.\build\release\bin\dasa.exe --driver "C:\path\to\some_driver.sys"
+```
+
+### 5. Use it
+
+DASA opens in **Simple mode**, written for people without
+reverse-engineering experience:
+
+1. **Pick a driver.** Click **Choose a driver on this PC** (the **Drivers**
+   tab lists the drivers installed on your computer; third-party ones are
+   shown first) and double-click one. You can also drag a `.sys` file onto
+   the window or press **Ctrl+O**.
+2. **Read the verdict** on the **Overview** tab: **Safe / Worth a look /
+   Risky / Dangerous**, what the driver can do, who can use it and what you
+   should do. The **Problems** tab explains each problem in plain words,
+   with technical details one click away.
+3. **Save a report** (button on the Overview, or **File > Export HTML
+   Report**, Ctrl+E) to keep it or send it to the driver's maker or your IT
+   team.
+
+**Expert mode** (button at the bottom right, **View > Expert Mode** or
+**Ctrl+Shift+X**) shows the full analysis: functions and disassembly,
+control-flow and call graphs, IOCTLs, devices, data flow, findings with
+evidence, search, bookmarks, notes, diffing and history. **Help >
+Glossary** explains the technical terms.
+
+Every analysis is saved automatically in
+`%LOCALAPPDATA%\DASA Project\DASA\dasa.db`, so earlier results, bookmarks,
+notes and tags are still there next time.
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `'cmake' is not recognized` or `cl` not found | Visual Studio's C++ workload isn't installed, or the `vcvars64.bat` path is wrong for your edition (step 3). |
+| `Could not find toolchain file ... vcpkg.cmake` | vcpkg isn't at `C:\vcpkg`. Install it there (step 1) or change `C:\vcpkg` in the build line. |
+| `Generator Ninja does not match the generator used previously` | Delete the `build` folder and build again. |
+| `Cannot open include file: 'LIEF/...'` (or another library header) | The folder path is too long. Move or clone DASA to a short path like `C:\src\DASA`, delete the `build` folder and build again. |
+| `LNK1168: cannot open dasa.exe for writing` | DASA is still running - close it, then build again. |
+| The app doesn't start / "no Qt platform plugin" | Start it from `build\release\bin` (the build copies the files it needs there). |
+| A driver shows "Dangerous" | Read the **Problems** tab: it says whether DASA proved that programs can control the dangerous operation or only that they can reach it. DASA can't see every safety check a driver makes - treat the verdict as a strong hint, not a final judgment. |
+
+
 ## Status
 
 **Phase 1 — application shell (done).** CMake project, Qt 6 window with
@@ -205,43 +309,22 @@ Dynamic analysis (loading the driver in a VM under Driver Verifier and
 WinDbg) is out of scope: DASA is a static analyzer, safe to run on the
 analyst's own machine.
 
-## Prerequisites (Windows)
+## Developer build (Debug and tests)
 
-- Visual Studio 2022 with "Desktop development with C++" (MSVC, plus the
-  bundled CMake and Ninja)
-- [vcpkg](https://github.com/microsoft/vcpkg) cloned to e.g. `C:\vcpkg`.
-  Dependencies (Qt, LIEF, Capstone, spdlog, SQLite3, nlohmann-json,
-  GoogleTest) come from `vcpkg.json` in manifest mode — no manual
-  `vcpkg install`. The first configure builds them, which takes a while
-  (Qt is the slow one); later configures reuse vcpkg's binary cache.
-
-## Build and test
-
-Get the source:
-
-```powershell
-git clone https://github.com/yceli1261-luna/Windows-Driver-Attack-Surface-Analyzer-Static-.git DASA
-cd DASA
-```
-
-The default presets use Ninja and `cl`, so they need an x64 MSVC
-environment. Run from a normal PowerShell in this directory:
+For working on DASA itself, build the Debug configuration and run the test
+suite (same tools as above):
 
 ```powershell
 cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && set VCPKG_ROOT=C:\vcpkg&& cmake --preset windows-msvc-debug && cmake --build --preset windows-msvc-debug && ctest --preset windows-msvc-debug'
 ```
 
-- `vcvars64.bat` sets `VCPKG_ROOT` to the copy of vcpkg bundled with Visual
-  Studio, so set it back to your clone afterwards, as above. (Keep
-  `C:\vcpkg&&` with no space, or cmd adds a trailing space to the path.)
-- The `windows-vs2022-debug` preset uses the Visual Studio generator
-  instead and doesn't need vcvars, but only works when Visual Studio
-  reports its installation as complete.
-- If the build was configured with a different generator before, delete
-  `build/` first.
+The Debug app is `build\debug\bin\dasa.exe`. Notes:
 
-The app is `build/debug/bin/dasa.exe`. Close it before rebuilding, or the
-link step fails with LNK1168 (file in use).
+- `vcvars64.bat` points `VCPKG_ROOT` at the copy of vcpkg bundled with
+  Visual Studio, which is why the line sets it back to `C:\vcpkg`.
+- The `windows-vs2022-debug` preset uses the Visual Studio generator instead
+  and doesn't need vcvars, but only works when Visual Studio reports its
+  installation as complete.
 
 ## Tests
 
