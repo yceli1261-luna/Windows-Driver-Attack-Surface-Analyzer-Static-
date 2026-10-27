@@ -1,11 +1,12 @@
 # DASA v2 (C++20 / Qt 6)
 
-Native rewrite of the Driver Attack Surface Analyzer. See
-`docs/DASA_V2_ARCHITECTURE.md` for the module layout and rationale, and the
-product brief in the project thread for the full phase plan. The original
-Python implementation lives at the repository root (`main.py`, `analysis/`,
-`parser/`, etc.) and is left untouched — it's the behavioral reference this
-rewrite is validated against, not code being migrated line-by-line.
+Static analysis of Windows kernel drivers: how user mode reaches a driver,
+the IOCTLs and handlers it exposes, which dangerous operations are
+reachable, and whether request data controls them. It opens in a Simple
+mode written for non-experts; Expert mode shows the full analysis. See
+`docs/DASA_V2_ARCHITECTURE.md` for the module layout and rationale. DASA v2
+is a native rewrite of an earlier Python prototype, which is not part of
+this repository.
 
 ## Status
 
@@ -215,6 +216,13 @@ analyst's own machine.
   (Qt is the slow one); later configures reuse vcpkg's binary cache.
 
 ## Build and test
+
+Get the source:
+
+```powershell
+git clone https://github.com/yceli1261-luna/Windows-Driver-Attack-Surface-Analyzer-Static-.git DASA
+cd DASA
+```
 
 The default presets use Ninja and `cl`, so they need an x64 MSVC
 environment. Run from a normal PowerShell in this directory:
